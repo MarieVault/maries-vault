@@ -1,0 +1,136 @@
+import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
+
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
+});
+
+export const entries = pgTable("entries", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  imageUrl: text("image_url").notNull(),
+  externalLink: text("external_link"),
+  artist: text("artist").notNull(),
+  tags: text("tags").array(),
+  type: text("type").notNull(), // 'comic' | 'image' | 'sequence' | 'story'
+  sequenceImages: text("sequence_images").array(),
+  content: text("content"), // For storing story text content
+  userId: integer("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const titles = pgTable("titles", {
+  id: serial("id").primaryKey(),
+  entryId: integer("entry_id").notNull().unique(),
+  title: text("title").notNull(),
+});
+
+export const customEntries = pgTable("custom_entries", {
+  id: serial("id").primaryKey(),
+  entryId: integer("entry_id").notNull().unique(),
+  customImageUrl: text("custom_image_url"),
+  customArtist: text("custom_artist"),
+  customTags: text("custom_tags").array(),
+  keywords: text("keywords").array(),
+  rating: integer("rating"),
+});
+
+export const artistLinks = pgTable("artist_links", {
+  id: serial("id").primaryKey(),
+  artistName: text("artist_name").notNull(),
+  platform: text("platform").notNull(), // 'deviantart', 'twitter', 'instagram', 'pixiv', etc.
+  url: text("url").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const tagEmojis = pgTable("tag_emojis", {
+  id: serial("id").primaryKey(),
+  tagName: text("tag_name").notNull().unique(),
+  emoji: text("emoji").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const keywordEmojis = pgTable("keyword_emojis", {
+  id: serial("id").primaryKey(),
+  keywordName: text("keyword_name").notNull().unique(),
+  emoji: text("emoji").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUserSchema = createInsertSchema(users).pick({
+  username: true,
+  password: true,
+});
+
+export const insertTitleSchema = createInsertSchema(titles).pick({
+  entryId: true,
+  title: true,
+});
+
+export const insertEntrySchema = createInsertSchema(entries).pick({
+  title: true,
+  imageUrl: true,
+  externalLink: true,
+  artist: true,
+  tags: true,
+  type: true,
+  sequenceImages: true,
+  content: true,
+  userId: true,
+});
+
+export const insertCustomEntrySchema = createInsertSchema(customEntries).pick({
+  entryId: true,
+  customImageUrl: true,
+  customArtist: true,
+  customTags: true,
+  keywords: true,
+  rating: true,
+});
+
+export const insertArtistLinkSchema = createInsertSchema(artistLinks).pick({
+  artistName: true,
+  platform: true,
+  url: true,
+});
+
+export const insertTagEmojiSchema = createInsertSchema(tagEmojis).pick({
+  tagName: true,
+  emoji: true,
+});
+
+export const insertKeywordEmojiSchema = createInsertSchema(keywordEmojis).pick({
+  keywordName: true,
+  emoji: true,
+});
+
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+export type InsertEntry = z.infer<typeof insertEntrySchema>;
+export type DbEntry = typeof entries.$inferSelect;
+export type InsertTitle = z.infer<typeof insertTitleSchema>;
+export type Title = typeof titles.$inferSelect;
+export type InsertCustomEntry = z.infer<typeof insertCustomEntrySchema>;
+export type CustomEntry = typeof customEntries.$inferSelect;
+export type InsertArtistLink = z.infer<typeof insertArtistLinkSchema>;
+export type ArtistLink = typeof artistLinks.$inferSelect;
+export type InsertTagEmoji = z.infer<typeof insertTagEmojiSchema>;
+export type TagEmoji = typeof tagEmojis.$inferSelect;
+export type InsertKeywordEmoji = z.infer<typeof insertKeywordEmojiSchema>;
+export type KeywordEmoji = typeof keywordEmojis.$inferSelect;
+
+// Legacy interface for compatibility - remove after migration
+export interface Entry {
+  id: number;
+  title: string;
+  imageUrl: string;
+  externalLink: string;
+  artist: string;
+  tags: string[];
+  type: 'comic' | 'image' | 'sequence' | 'story';
+  sequenceImages?: string[];
+  content?: string;
+}

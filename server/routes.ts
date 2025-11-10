@@ -1,0 +1,765 @@
+import type { Express, Request, Response, NextFunction } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { insertTitleSchema, insertCustomEntrySchema, insertTagEmojiSchema, insertKeywordEmojiSchema, entries, titles, customEntries, tagEmojis, keywordEmojis } from "@shared/schema";
+import { z } from "zod";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { db } from "./db";
+import { eq, sql } from "drizzle-orm";
+import { handleLogin, handleLogout, checkAuthStatus, requireAuth } from "./auth-middleware";
+
+
+// Error handling middleware
+function parseIntParam(paramName: string) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const value = parseInt(req.params[paramName], 10);
+    if (isNaN(value)) {
+      return res.status(400).json({ message: `Invalid ${paramName}` });
+    }
+    (req as any).parsedParams = { ...(req as any).parsedParams, [paramName]: value };
+    next();
+  };
+}
+
+function handleAsyncErrors(fn: (req: Request, res: Response, next: NextFunction) => Promise<any>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
+function handleZodValidation<T>(schema: z.ZodSchema<T>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      req.body = schema.parse(req.body);
+      next();
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid request data', errors: error.errors });
+      }
+      next(error);
+    }
+  };
+}
+
+export async function registerRoutes(app: Express): Promise<Server> {
+  // Authentication routes (unprotected)
+  app.post("/api/auth/login", handleLogin);
+  app.post("/api/auth/logout", handleLogout);
+  app.get("/api/auth/status", checkAuthStatus);
+
+  // Apply authentication middleware to all other API routes
+  app.use("/api", requireAuth);
+
+  // Get entries data from database
+  app.get("/api/entries", async (req, res) => {
+    try {
+      const { db } = await import('./db');
+      
+      // Get all entries from database with their customizations
+      const entriesQuery = `
+        SELECT 
+          e.id,
+          COALESCE(t.title, e.title) as title,
+          COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
+          e.external_link as "externalLink", 
+          COALESCE(ce.custom_artist, e.artist) as artist,
+          COALESCE(ce.custom_tags, e.tags) as tags,
+          e.type,
+          e.sequence_images as "sequenceImages",
+          ce.keywords,
+          ce.rating
+        FROM entries e
+        LEFT JOIN titles t ON e.id = t.entry_id
+        LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        ORDER BY e.id
+      `;
+      
+      const result = await db.execute(entriesQuery);
+      
+      // Convert database rows to expected format
+      const dbEntries = result.rows.map((row: any) => ({
+        id: row.id,
+        title: row.title || 'Untitled',
+        imageUrl: row.imageUrl || '',
+        externalLink: row.externalLink || '',
+        artist: row.artist || 'Unknown Artist',
+        tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
+        type: row.type || 'image',
+        sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
+        keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
+        rating: row.rating || null,
+      }));
+      
+      res.json(dbEntries);
+    } catch (error) {
+      console.error('Error loading entries:', error);
+      res.status(500).json({ message: 'Failed to load entries' });
+    }
+  });
+
+  // Get aggregated artists list with counts
+  app.get("/api/artists", async (req, res) => {
+    try {
+      const { db } = await import('./db');
+
+      const artistsQuery = `
+        SELECT
+          COALESCE(ce.custom_artist, e.artist) as name,
+          COUNT(*) as count,
+          ARRAY_AGG(DISTINCT unnested_tag) FILTER (WHERE unnested_tag IS NOT NULL) as tags
+        FROM entries e
+        LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        LEFT JOIN LATERAL unnest(COALESCE(ce.custom_tags, e.tags)) AS unnested_tag ON true
+        GROUP BY COALESCE(ce.custom_artist, e.artist)
+        ORDER BY name
+      `;
+
+      const result = await db.execute(artistsQuery);
+
+      const artists = result.rows.map((row: any) => ({
+        name: row.name || 'Unknown Artist',
+        count: parseInt(row.count),
+        tags: Array.isArray(row.tags) ? row.tags : []
+      }));
+
+      res.json(artists);
+    } catch (error) {
+      console.error('Error loading artists:', error);
+      res.status(500).json({ message: 'Failed to load artists' });
+    }
+  });
+
+  // Get aggregated tags list with counts
+  app.get("/api/tags", async (req, res) => {
+    try {
+      const { db } = await import('./db');
+
+      const tagsQuery = `
+        SELECT
+          unnested_tag as name,
+          COUNT(*) as count,
+          ARRAY_AGG(DISTINCT COALESCE(ce.custom_artist, e.artist)) as artists
+        FROM entries e
+        LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        CROSS JOIN unnest(COALESCE(ce.custom_tags, e.tags)) AS unnested_tag
+        GROUP BY unnested_tag
+        ORDER BY count DESC
+      `;
+
+      const result = await db.execute(tagsQuery);
+
+      const tags = result.rows.map((row: any) => ({
+        name: row.name,
+        count: parseInt(row.count),
+        artists: Array.isArray(row.artists) ? row.artists.filter(Boolean) : []
+      }));
+
+      res.json(tags);
+    } catch (error) {
+      console.error('Error loading tags:', error);
+      res.status(500).json({ message: 'Failed to load tags' });
+    }
+  });
+
+  // Get entries for a specific artist
+  app.get("/api/artists/:artistName/entries", async (req, res) => {
+    try {
+      const artistName = decodeURIComponent(req.params.artistName);
+      const { db } = await import('./db');
+
+      const result = await db.execute(sql`
+        SELECT
+          e.id,
+          COALESCE(t.title, e.title) as title,
+          COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
+          e.external_link as "externalLink",
+          COALESCE(ce.custom_artist, e.artist) as artist,
+          COALESCE(ce.custom_tags, e.tags) as tags,
+          e.type,
+          e.sequence_images as "sequenceImages",
+          ce.keywords,
+          ce.rating
+        FROM entries e
+        LEFT JOIN titles t ON e.id = t.entry_id
+        LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        WHERE LOWER(COALESCE(ce.custom_artist, e.artist)) = LOWER(${artistName})
+        ORDER BY e.id
+      `);
+
+      const dbEntries = result.rows.map((row: any) => ({
+        id: row.id,
+        title: row.title || 'Untitled',
+        imageUrl: row.imageUrl || '',
+        externalLink: row.externalLink || '',
+        artist: row.artist || 'Unknown Artist',
+        tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
+        type: row.type || 'image',
+        sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
+        keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
+        rating: row.rating || null,
+      }));
+
+      res.json(dbEntries);
+    } catch (error) {
+      console.error('Error loading artist entries:', error);
+      res.status(500).json({ message: 'Failed to load artist entries' });
+    }
+  });
+
+  // Get individual entry by ID
+  app.get("/api/entries/:id", parseIntParam('id'), handleAsyncErrors(async (req, res) => {
+    const id = (req as any).parsedParams.id;
+    const { db } = await import('./db');
+
+    // Get single entry from database with its customizations
+    const result = await storage.getAllEntries();
+    const foundEntry = result.find((e: any) => e.id === id);
+
+    if (!foundEntry) {
+      return res.status(404).json({ message: 'Entry not found' });
+    }
+
+    res.json(foundEntry);
+  }));
+
+  // Get custom title for entry
+  app.get("/api/titles/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const title = await storage.getTitleByEntryId(entryId);
+    
+    if (title) {
+      res.json(title);
+    } else {
+      res.status(404).json({ message: 'Title not found' });
+    }
+  }));
+
+  // Set/update custom title for entry
+  app.post("/api/titles", handleZodValidation(insertTitleSchema), handleAsyncErrors(async (req, res) => {
+    const validatedData = req.body;
+    
+    if (!validatedData.title.trim()) {
+      return res.status(400).json({ message: 'Title cannot be empty' });
+    }
+    
+    const title = await storage.setTitle({
+      entryId: validatedData.entryId,
+      title: validatedData.title.trim()
+    });
+    
+    res.json(title);
+  }));
+
+  // Configure multer for image uploads - save to disk
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+
+  // Ensure uploads directory exists
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  const diskStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, uploadsDir);
+    },
+    filename: (req, file, cb) => {
+      // Generate unique filename: timestamp-random-originalname
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const ext = path.extname(file.originalname);
+      const nameWithoutExt = path.basename(file.originalname, ext);
+      cb(null, `${nameWithoutExt}-${uniqueSuffix}${ext}`);
+    }
+  });
+
+  const upload = multer({
+    storage: diskStorage,
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5MB limit
+    },
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed'));
+      }
+    },
+  });
+
+  // Upload image endpoint
+  app.post("/api/upload-image", upload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: 'No image file provided' });
+      }
+
+      // Return the URL path to the uploaded file
+      const imageUrl = `/uploads/${req.file.filename}`;
+
+      res.json({ imageUrl });
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      res.status(500).json({ message: 'Failed to upload image' });
+    }
+  });
+
+  // Share handler endpoint for PWA share target
+  app.post('/api/share', upload.single('file'), handleAsyncErrors(async (req, res) => {
+    const { title, text, url } = req.body;
+    
+    try {
+      let entry;
+      
+      if (req.file) {
+        // Handle shared image - file already saved to disk by multer
+        const imageUrl = `/uploads/${req.file.filename}`;
+
+        entry = await storage.createEntry({
+          title: title || "Shared Image",
+          imageUrl: imageUrl,
+          externalLink: url || "",
+          artist: "Unknown",
+          tags: ["shared"],
+          type: "image"
+        });
+      } else if (url) {
+        // Handle shared URL
+        entry = await storage.createEntry({
+          title: title || text || "Shared Link",
+          imageUrl: "",
+          externalLink: url,
+          artist: "Unknown",
+          tags: ["shared", "link"],
+          type: "image"
+        });
+      } else {
+        return res.status(400).json({ error: 'No file or URL provided' });
+      }
+      
+      res.json({ 
+        success: true, 
+        entry: entry,
+        message: 'Content added to vault!'
+      });
+    } catch (error) {
+      console.error('Error processing shared content:', error);
+      res.status(500).json({ error: 'Error processing shared content' });
+    }
+  }));
+
+  // PWA Share Target handler - redirects to frontend share handler
+  app.post('/share-handler', upload.single('file'), handleAsyncErrors(async (req, res) => {
+    const { title, text, url } = req.body;
+    
+    try {
+      let entry;
+      
+      if (req.file) {
+        // Handle shared image - file already saved to disk by multer
+        const imageUrl = `/uploads/${req.file.filename}`;
+
+        entry = await storage.createEntry({
+          title: title || "Shared Image",
+          imageUrl: imageUrl,
+          externalLink: url || "",
+          artist: "Unknown",
+          tags: ["shared"],
+          type: "image"
+        });
+      } else if (url) {
+        // Handle shared URL
+        entry = await storage.createEntry({
+          title: title || text || "Shared Link",
+          imageUrl: "",
+          externalLink: url,
+          artist: "Unknown",
+          tags: ["shared", "link"],
+          type: "image"
+        });
+      } else {
+        // Redirect to home if no valid content
+        return res.redirect('/');
+      }
+      
+      // Redirect to share handler page with success message
+      res.redirect(`/share-handler?status=success&entryId=${entry.id}`);
+    } catch (error) {
+      console.error('Error processing shared content:', error);
+      res.redirect('/share-handler?status=error&message=Failed to process shared content');
+    }
+  }));
+
+  // Update custom entry (image and/or artist)
+  app.post("/api/custom-entries", async (req, res) => {
+    try {
+      const schema = z.object({
+        entryId: z.number(),
+        customImageUrl: z.string().optional(),
+        customArtist: z.string().optional(),
+        customTags: z.array(z.string()).optional(),
+        keywords: z.array(z.string()).optional(),
+        rating: z.number().min(1).max(5).optional(),
+      });
+      
+      const validatedData = schema.parse(req.body);
+      
+      const customEntry = await storage.updateCustomEntry(validatedData.entryId, {
+        customImageUrl: validatedData.customImageUrl,
+        customArtist: validatedData.customArtist,
+        customTags: validatedData.customTags,
+        keywords: validatedData.keywords,
+        rating: validatedData.rating,
+      });
+      
+      // If no updates were made, still return success
+      if (!customEntry) {
+        return res.json({ message: 'No updates needed' });
+      }
+      
+      res.json(customEntry);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid request data', errors: error.errors });
+      }
+      
+      console.error('Error updating custom entry:', error);
+      res.status(500).json({ message: 'Failed to update entry' });
+    }
+  });
+
+  // Create new entry
+  app.post("/api/entries", async (req, res) => {
+    try {
+      const schema = z.object({
+        title: z.string().min(1, "Title is required"),
+        imageUrl: z.string().optional(),
+        externalLink: z.string().optional(),
+        artist: z.string().min(1, "Artist is required"),
+        tags: z.array(z.string()).optional(),
+        keywords: z.array(z.string()).optional(),
+        type: z.enum(['comic', 'image', 'sequence']).default('image'),
+        sequenceImages: z.array(z.string()).optional(),
+      });
+      
+      const validatedData = schema.parse(req.body);
+      
+      const newEntry = await storage.createEntry(validatedData);
+      
+      res.json(newEntry);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid request data', errors: error.errors });
+      }
+      
+      console.error('Error creating entry:', error);
+      res.status(500).json({ message: 'Failed to create entry' });
+    }
+  });
+
+  // Delete entry
+  app.delete("/api/entries/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    await storage.deleteEntry(entryId);
+    res.json({ message: 'Entry deleted successfully' });
+  }));
+
+  // Artist links routes
+  app.get('/api/artists/:artistName/links', async (req, res) => {
+    try {
+      const artistName = decodeURIComponent(req.params.artistName);
+      const links = await storage.getArtistLinks(artistName);
+      res.json(links);
+    } catch (error) {
+      console.error('Error fetching artist links:', error);
+      res.status(500).json({ message: 'Failed to fetch artist links' });
+    }
+  });
+
+  app.post('/api/artists/:artistName/links', async (req, res) => {
+    try {
+      const artistName = decodeURIComponent(req.params.artistName);
+      const { platform, url } = req.body;
+      
+      if (!platform || !url) {
+        return res.status(400).json({ message: 'Platform and URL are required' });
+      }
+
+      const linkData = { artistName, platform, url };
+      const newLink = await storage.addArtistLink(linkData);
+      res.json(newLink);
+    } catch (error) {
+      console.error('Error adding artist link:', error);
+      res.status(500).json({ message: 'Failed to add artist link' });
+    }
+  });
+
+  app.delete('/api/artist-links/:id', async (req, res) => {
+    try {
+      const linkId = parseInt(req.params.id);
+      await storage.deleteArtistLink(linkId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting artist link:', error);
+      res.status(500).json({ message: 'Failed to delete artist link' });
+    }
+  });
+
+  // Get custom entry data
+  app.get("/api/custom-entries/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const customEntry = await storage.getCustomEntryByEntryId(entryId);
+    
+    if (customEntry) {
+      res.json(customEntry);
+    } else {
+      // Return empty custom entry data instead of 404 for new entries
+      res.json({
+        entryId: entryId,
+        customImageUrl: null,
+        customArtist: null,
+        customTags: null,
+        keywords: null,
+        rating: null
+      });
+    }
+  }));
+
+
+  // Tag emoji routes
+  // Batch fetch tag emojis
+  app.get("/api/tag-emojis/batch", handleAsyncErrors(async (req, res) => {
+    const tagNames = req.query.tags;
+
+    if (!tagNames) {
+      return res.json({});
+    }
+
+    // Parse comma-separated tag names
+    const tags = typeof tagNames === 'string' ? tagNames.split(',') : [];
+
+    if (tags.length === 0) {
+      return res.json({});
+    }
+
+    try {
+      // Fetch all emojis in a single query
+      const result = await db.execute(sql`
+        SELECT tag_name, emoji FROM tag_emojis
+        WHERE LOWER(tag_name) = ANY(${sql.raw(`ARRAY[${tags.map(t => `LOWER('${t.replace(/'/g, "''")}')`).join(',')}]`)})
+      `);
+
+      const emojiMap: Record<string, string> = {};
+      result.rows.forEach((row: any) => {
+        // Match back to original casing from request
+        const originalTag = tags.find(t => t.toLowerCase() === row.tag_name.toLowerCase());
+        if (originalTag) {
+          emojiMap[originalTag] = row.emoji;
+        }
+      });
+
+      res.json(emojiMap);
+    } catch (error) {
+      console.error('Error fetching batch tag emojis:', error);
+      res.status(500).json({ message: 'Failed to fetch tag emojis' });
+    }
+  }));
+
+  app.get("/api/tag-emojis/:tagName", handleAsyncErrors(async (req, res) => {
+    const tagName = req.params.tagName;
+    
+    if (!tagName) {
+      return res.status(400).json({ message: "Tag name is required" });
+    }
+
+    // Try exact match first, then case-insensitive
+    let tagEmoji = await db
+      .select()
+      .from(tagEmojis)
+      .where(eq(tagEmojis.tagName, tagName))
+      .limit(1);
+
+    // If no exact match, try case-insensitive search
+    if (tagEmoji.length === 0) {
+      const result = await db.execute(sql`
+        SELECT * FROM tag_emojis 
+        WHERE LOWER(tag_name) = LOWER(${tagName}) 
+        LIMIT 1
+      `);
+      
+      if (result.rows.length > 0) {
+        const row = result.rows[0] as any;
+        tagEmoji = [{
+          id: row.id,
+          tagName: row.tag_name,
+          emoji: row.emoji,
+          createdAt: row.created_at
+        }];
+      }
+    }
+
+    if (tagEmoji.length > 0) {
+      res.json(tagEmoji[0]);
+    } else {
+      res.status(404).json({ message: "Tag emoji not found" });
+    }
+  }));
+
+  app.post("/api/tag-emojis", handleZodValidation(insertTagEmojiSchema), handleAsyncErrors(async (req, res) => {
+    const { tagName, emoji } = req.body;
+
+    // Check if emoji already exists for this tag
+    const existing = await db
+      .select()
+      .from(tagEmojis)
+      .where(eq(tagEmojis.tagName, tagName))
+      .limit(1);
+
+    let result;
+    if (existing.length > 0) {
+      // Update existing emoji
+      result = await db
+        .update(tagEmojis)
+        .set({ emoji })
+        .where(eq(tagEmojis.tagName, tagName))
+        .returning();
+    } else {
+      // Insert new emoji
+      result = await db
+        .insert(tagEmojis)
+        .values({ tagName, emoji })
+        .returning();
+    }
+
+    res.json(result[0]);
+  }));
+
+  // Keyword emoji routes
+  app.get("/api/keyword-emojis/:keywordName", handleAsyncErrors(async (req, res) => {
+    const keywordName = req.params.keywordName;
+    
+    if (!keywordName) {
+      return res.status(400).json({ message: "Keyword name is required" });
+    }
+
+    // Try exact match first, then case-insensitive
+    let keywordEmoji = await db
+      .select()
+      .from(keywordEmojis)
+      .where(eq(keywordEmojis.keywordName, keywordName))
+      .limit(1);
+
+    // If no exact match, try case-insensitive search
+    if (keywordEmoji.length === 0) {
+      const result = await db.execute(sql`
+        SELECT * FROM keyword_emojis 
+        WHERE LOWER(keyword_name) = LOWER(${keywordName}) 
+        LIMIT 1
+      `);
+      
+      if (result.rows.length > 0) {
+        const row = result.rows[0] as any;
+        keywordEmoji = [{
+          id: row.id,
+          keywordName: row.keyword_name,
+          emoji: row.emoji,
+          createdAt: row.created_at
+        }];
+      }
+    }
+
+    if (keywordEmoji.length > 0) {
+      res.json(keywordEmoji[0]);
+    } else {
+      res.status(404).json({ message: "Keyword emoji not found" });
+    }
+  }));
+
+  app.post("/api/keyword-emojis", handleZodValidation(insertKeywordEmojiSchema), handleAsyncErrors(async (req, res) => {
+    const { keywordName, emoji } = req.body;
+
+    // Check if emoji already exists for this keyword
+    const existing = await db
+      .select()
+      .from(keywordEmojis)
+      .where(eq(keywordEmojis.keywordName, keywordName))
+      .limit(1);
+
+    let result;
+    if (existing.length > 0) {
+      // Update existing emoji
+      result = await db
+        .update(keywordEmojis)
+        .set({ emoji })
+        .where(eq(keywordEmojis.keywordName, keywordName))
+        .returning();
+    } else {
+      // Insert new emoji
+      result = await db
+        .insert(keywordEmojis)
+        .values({ keywordName, emoji })
+        .returning();
+    }
+
+    res.json(result[0]);
+  }));
+
+  // Extract images from Twitter/X and create entry
+  app.post("/api/extract-twitter", handleAsyncErrors(async (req, res) => {
+    const { tweetUrl, title, tags, artist } = req.body;
+
+    if (!tweetUrl) {
+      return res.status(400).json({ message: 'Tweet URL is required' });
+    }
+
+    try {
+      const { extractTwitterImages } = await import('./twitter-extractor');
+
+      // Extract and download images
+      const { tweetData, downloadedImages } = await extractTwitterImages(
+        tweetUrl,
+        path.join(process.cwd(), 'uploads')
+      );
+
+      // Prepare entry data
+      const entryTitle = title || tweetData.text.substring(0, 100) || 'Twitter Image';
+      const entryArtist = artist || `@${tweetData.author.screen_name}`;
+      const entryTags = tags || ['twitter', 'imported'];
+
+      // Create entry in database
+      // If single image: use imageUrl
+      // If multiple images: use imageUrl for first, sequenceImages for rest
+      const entryData: any = {
+        title: entryTitle,
+        imageUrl: downloadedImages[0],
+        externalLink: tweetData.url,
+        artist: entryArtist,
+        tags: entryTags,
+        type: downloadedImages.length > 1 ? 'sequence' : 'image',
+        content: tweetData.text,
+      };
+
+      if (downloadedImages.length > 1) {
+        entryData.sequenceImages = downloadedImages;
+      }
+
+      const entry = await storage.createEntry(entryData);
+
+      res.json({
+        success: true,
+        entry,
+        message: `Successfully imported ${downloadedImages.length} image(s) from Twitter`,
+        imageCount: downloadedImages.length,
+      });
+    } catch (error: any) {
+      console.error('Error extracting Twitter images:', error);
+      res.status(500).json({
+        message: 'Failed to extract images from tweet',
+        error: error.message,
+      });
+    }
+  }));
+
+  const httpServer = createServer(app);
+  return httpServer;
+}

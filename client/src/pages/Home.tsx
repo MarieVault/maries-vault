@@ -251,22 +251,6 @@ export default function Home() {
                 </Button>
               </Link>
             </div>
-            
-            <div className="p-4 bg-white rounded-xl shadow-lg">
-              <h3 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">
-                <BookOpen className="text-blue-600" size={16} />
-                <span>Browse Keywords</span>
-              </h3>
-              <p className="text-gray-600 text-sm mb-3">Explore content by title keywords and themes</p>
-              <Link href="/keywords">
-                <Button 
-                  variant="outline" 
-                  className="w-full" 
-                >
-                  Keywords Gallery
-                </Button>
-              </Link>
-            </div>
 
             <div className="p-4 bg-white rounded-xl shadow-lg">
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">

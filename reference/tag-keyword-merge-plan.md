@@ -7,9 +7,21 @@
 
 ## Progress Tracker
 - ✅ **Phase 1: Database Migration** - Completed (Nov 11, 2025)
+  - Created migration file, added user_tags column
+  - Migrated 61 keywords to user_tags
+  - Merged 25 keyword emojis into tag_emojis
 - ✅ **Phase 2: Backend API Updates** - Completed (Nov 11, 2025)
-- 🔄 **Phase 3: Frontend Components** - In Progress
-- ⏳ **Phase 4: Frontend Pages** - Pending
+  - Updated schema.ts to add userTags field
+  - Updated API routes to support userTags
+  - Removed keyword emoji endpoints
+  - Added backwards compatibility for keywords parameter
+- ✅ **Phase 3: Frontend Components** - Completed (Nov 11, 2025)
+  - Updated Entry interface with originalTags and userTags
+  - Modified EntryCard to use userTags instead of keywords
+  - Updated emoji fetching for unified tags
+  - Display user tags with blue badges
+  - Removed inline keywords editing UI
+- 🔄 **Phase 4: Frontend Pages** - In Progress
 - ⏳ **Phase 5: Search & Autocomplete** - Pending
 - ⏳ **Phase 6: Cleanup & Deprecation** - Pending
 - ⏳ **Phase 7: Testing & Rollback** - Pending

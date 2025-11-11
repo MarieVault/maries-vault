@@ -9,11 +9,9 @@ import { AuthProvider } from "./context/AuthContext";
 import Home from "@/pages/Home";
 import Artists from "@/pages/Artists";
 import Tags from "@/pages/Tags";
-import Keywords from "@/pages/Keywords";
 import Titles from "@/pages/Titles";
 import TagPage from "@/pages/TagPage";
 import ArtistPage from "@/pages/ArtistPage";
-import KeywordPage from "@/pages/KeywordPage";
 import CreateEntry from "@/pages/CreateEntry";
 import SequenceGallery from "@/pages/SequenceGallery";
 import StoryViewer from "@/pages/StoryViewer";
@@ -30,9 +28,14 @@ function Router() {
       <Route path="/artist/:artistName" component={ArtistPage} />
       <Route path="/tags" component={Tags} />
       <Route path="/tags/:tagName" component={TagPage} />
-      <Route path="/keywords" component={Keywords} />
+      {/* Redirect old keyword routes to tags */}
+      <Route path="/keywords">
+        {() => { window.location.href = '/tags'; return null; }}
+      </Route>
+      <Route path="/keyword/:keyword">
+        {(params) => { window.location.href = `/tags/${params.keyword}`; return null; }}
+      </Route>
       <Route path="/titles" component={Titles} />
-      <Route path="/keyword/:keyword" component={KeywordPage} />
       <Route path="/create" component={CreateEntry} />
       <Route path="/sequence/:id" component={SequenceGallery} />
       <Route path="/story/:id" component={StoryViewer} />

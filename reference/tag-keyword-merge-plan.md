@@ -21,7 +21,10 @@
   - Updated emoji fetching for unified tags
   - Display user tags with blue badges
   - Removed inline keywords editing UI
-- 🔄 **Phase 4: Frontend Pages** - In Progress
+- 🔄 **Phase 4: Frontend Pages** - Partially Complete (Nov 11, 2025)
+  - ✅ Removed Keywords.tsx and KeywordPage.tsx (552 lines deleted)
+  - ✅ Added redirects from /keywords → /tags
+  - ⏳ Still need: Update Tags gallery, TagPage, CreateEntry form
 - ⏳ **Phase 5: Search & Autocomplete** - Pending
 - ⏳ **Phase 6: Cleanup & Deprecation** - Pending
 - ⏳ **Phase 7: Testing & Rollback** - Pending

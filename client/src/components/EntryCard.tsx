@@ -21,23 +21,22 @@ export default function EntryCard({ entry }: EntryCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isEditingArtist, setIsEditingArtist] = useState(false);
   const [isEditingTags, setIsEditingTags] = useState(false);
-  const [isEditingKeywords, setIsEditingKeywords] = useState(false);
   const [draft, setDraft] = useState(entry.title || "");
   const [artistDraft, setArtistDraft] = useState(entry.artist || "");
   const [tagsDraft, setTagsDraft] = useState("");
-  const [keywordsDraft, setKeywordsDraft] = useState("");
+  const [userTagsDraft, setUserTagsDraft] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showArtistSuggestions, setShowArtistSuggestions] = useState(false);
-  const [showKeywordSuggestions, setShowKeywordSuggestions] = useState(false);
+  const [showUserTagSuggestions, setShowUserTagSuggestions] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [customImage, setCustomImage] = useState<string | null>(null);
   const [customArtist, setCustomArtist] = useState<string | null>(null);
   const [customTags, setCustomTags] = useState<string[] | null>(null);
-  const [customKeywords, setCustomKeywords] = useState<string[] | null>(null);
+  const [userTags, setUserTags] = useState<string[]>(entry.userTags || []);
   const [currentTags, setCurrentTags] = useState<string[]>([]);
-  const [currentKeywords, setCurrentKeywords] = useState<string[]>([]);
+  const [currentUserTags, setCurrentUserTags] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [rating, setRating] = useState<number | null>((entry as any).rating || null);
   const [hoverRating, setHoverRating] = useState<number | null>(null);
@@ -46,8 +45,8 @@ export default function EntryCard({ entry }: EntryCardProps) {
 
   // Load existing custom data from entry
   useEffect(() => {
-    if ((entry as any).keywords && Array.isArray((entry as any).keywords)) {
-      setCustomKeywords((entry as any).keywords);
+    if (entry.userTags && Array.isArray(entry.userTags)) {
+      setUserTags(entry.userTags);
     }
   }, [entry]);
 
@@ -56,13 +55,18 @@ export default function EntryCard({ entry }: EntryCardProps) {
     queryKey: ["/api/entries"],
   });
 
-  // Fetch tag emojis for all tags in this entry
-  const tagNames = customTags || entry.tags || [];
+  // Fetch tag emojis for all tags in this entry (original + user tags)
+  const allTags = [
+    ...(customTags || entry.originalTags || entry.tags || []),
+    ...(userTags || [])
+  ];
+  const uniqueTags = [...new Set(allTags)]; // Remove duplicates
+
   const { data: tagEmojisData } = useQuery({
-    queryKey: ["/api/tag-emojis/bulk", tagNames],
-    enabled: tagNames.length > 0,
+    queryKey: ["/api/tag-emojis/bulk", uniqueTags],
+    enabled: uniqueTags.length > 0,
     queryFn: async () => {
-      const promises = tagNames.map(async (tagName) => {
+      const promises = uniqueTags.map(async (tagName) => {
         try {
           const response = await fetch(`/api/tag-emojis/${encodeURIComponent(tagName)}`);
           if (response.ok) {
@@ -82,38 +86,15 @@ export default function EntryCard({ entry }: EntryCardProps) {
     }
   });
 
-  // Fetch keyword emojis for all keywords in this entry  
-  const keywordNames = customKeywords || (entry as any).keywords || [];
-  const { data: keywordEmojisData } = useQuery({
-    queryKey: ["/api/keyword-emojis/bulk", keywordNames],
-    enabled: keywordNames.length > 0,
-    queryFn: async () => {
-      const promises = keywordNames.map(async (keywordName: string) => {
-        try {
-          const response = await fetch(`/api/keyword-emojis/${encodeURIComponent(keywordName)}`);
-          if (response.ok) {
-            const data = await response.json();
-            return { keywordName, emoji: data.emoji };
-          }
-        } catch (error) {
-          console.log(`No emoji found for keyword: ${keywordName}`);
-        }
-        return { keywordName, emoji: null };
-      });
-      const results = await Promise.all(promises);
-      return results.reduce((acc, { keywordName, emoji }) => {
-        if (emoji) acc[keywordName] = emoji;
-        return acc;
-      }, {} as Record<string, string>);
-    }
-  });
-
-  // Get all unique tags from all entries for autocomplete
+  // Get all unique tags from all entries for autocomplete (includes both original and user tags)
   const allAvailableTags = useMemo(() => {
     if (!allEntries) return [];
     const tagSet = new Set<string>();
     allEntries.forEach(entry => {
-      entry.tags.forEach(tag => tagSet.add(tag));
+      // Add all combined tags
+      if (entry.tags) entry.tags.forEach(tag => tagSet.add(tag));
+      // Also add user tags separately if they exist
+      if (entry.userTags) entry.userTags.forEach(tag => tagSet.add(tag));
     });
     return Array.from(tagSet).sort();
   }, [allEntries]);
@@ -130,48 +111,32 @@ export default function EntryCard({ entry }: EntryCardProps) {
     return Array.from(artistSet).sort();
   }, [allEntries]);
 
-  // Get all unique keywords from all entries for autocomplete
-  const allAvailableKeywords = useMemo(() => {
-    if (!allEntries) return [];
-    const keywordSet = new Set<string>();
-    allEntries.forEach(entry => {
-      if ((entry as any).keywords && Array.isArray((entry as any).keywords)) {
-        (entry as any).keywords.forEach((keyword: string) => {
-          if (keyword && keyword.trim()) {
-            keywordSet.add(keyword.trim());
-          }
-        });
-      }
-    });
-    return Array.from(keywordSet).sort();
-  }, [allEntries]);
-
-  // Filter suggestions based on current input
+  // Filter tag suggestions based on current input
   const filteredSuggestions = useMemo(() => {
     if (!tagsDraft.trim()) return [];
-    return allAvailableTags.filter(tag => 
+    return allAvailableTags.filter(tag =>
       tag.toLowerCase().includes(tagsDraft.toLowerCase()) &&
       !currentTags.includes(tag)
     ).slice(0, 5);
   }, [tagsDraft, allAvailableTags, currentTags]);
 
+  // Filter user tag suggestions based on current input
+  const filteredUserTagSuggestions = useMemo(() => {
+    if (!userTagsDraft.trim()) return [];
+    return allAvailableTags.filter(tag =>
+      tag.toLowerCase().includes(userTagsDraft.toLowerCase()) &&
+      !currentUserTags.includes(tag)
+    ).slice(0, 5);
+  }, [userTagsDraft, allAvailableTags, currentUserTags]);
+
   // Filter artist suggestions based on current input
   const filteredArtistSuggestions = useMemo(() => {
     if (!artistDraft.trim()) return [];
-    return allAvailableArtists.filter(artist => 
+    return allAvailableArtists.filter(artist =>
       artist.toLowerCase().includes(artistDraft.toLowerCase()) &&
       artist.toLowerCase() !== artistDraft.toLowerCase()
     ).slice(0, 5);
   }, [artistDraft, allAvailableArtists]);
-
-  // Filter keyword suggestions based on current input
-  const filteredKeywordSuggestions = useMemo(() => {
-    if (!keywordsDraft.trim()) return [];
-    return allAvailableKeywords.filter(keyword => 
-      keyword.toLowerCase().includes(keywordsDraft.toLowerCase()) &&
-      !currentKeywords.includes(keyword)
-    ).slice(0, 5);
-  }, [keywordsDraft, allAvailableKeywords, currentKeywords]);
 
   const handleEditStart = () => {
     if (isEditing) return;
@@ -259,11 +224,11 @@ export default function EntryCard({ entry }: EntryCardProps) {
     }
   };
 
-  const handleKeywordsSave = async () => {
+  const handleUserTagsSave = async () => {
     setIsSaving(true);
 
     try {
-      // Update the entry with new keywords
+      // Update the entry with new user tags
       const response = await fetch("/api/custom-entries", {
         method: "POST",
         headers: {
@@ -271,18 +236,18 @@ export default function EntryCard({ entry }: EntryCardProps) {
         },
         body: JSON.stringify({
           entryId: entry.id,
-          keywords: currentKeywords,
+          userTags: currentUserTags,
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to update keywords");
+        throw new Error("Failed to update user tags");
       }
 
-      setCustomKeywords(currentKeywords);
-      setIsEditingKeywords(false);
-      setCurrentKeywords([]);
-      setKeywordsDraft("");
+      setUserTags(currentUserTags);
+      setCurrentUserTags([]);
+      setUserTagsDraft("");
+      setShowUserTagSuggestions(false);
 
       // Force refresh entries data
       await queryClient.refetchQueries({ queryKey: ["/api/entries"] });
@@ -290,14 +255,14 @@ export default function EntryCard({ entry }: EntryCardProps) {
 
       toast({
         title: "Success",
-        description: "Keywords updated successfully!",
+        description: "User tags updated successfully!",
       });
     } catch (error) {
-      console.error('Error saving keywords:', error);
+      console.error('Error saving user tags:', error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to update keywords. Please try again.",
+        description: "Failed to update user tags. Please try again.",
       });
     } finally {
       setIsSaving(false);
@@ -479,12 +444,12 @@ export default function EntryCard({ entry }: EntryCardProps) {
         setCustomImage(null);
         setCustomArtist(null);
         setCustomTags(null);
-        setCustomKeywords(null);
+        setUserTags(entry.userTags || []);
         setRating(null);
         setIsImageRevealed(false); // Reset blur overlay state
         setDraft(entry.title || "");
         setArtistDraft(entry.artist || "");
-        
+
         // Load custom data for this entry
         const response = await fetch(`/api/custom-entries/${entry.id}`);
         if (response.ok) {
@@ -492,13 +457,8 @@ export default function EntryCard({ entry }: EntryCardProps) {
           if (customData.customImageUrl) setCustomImage(customData.customImageUrl);
           if (customData.customArtist) setCustomArtist(customData.customArtist);
           if (customData.customTags) setCustomTags(customData.customTags);
-          if (customData.keywords) setCustomKeywords(customData.keywords);
+          if (customData.userTags) setUserTags(customData.userTags);
           if (customData.rating) setRating(customData.rating);
-        }
-
-        // Initialize keywords from entry data if not already set in custom data
-        if ((entry as any).keywords && !customKeywords) {
-          setCustomKeywords((entry as any).keywords);
         }
       } catch (error) {
         console.error('Error loading custom data:', error);
@@ -506,7 +466,7 @@ export default function EntryCard({ entry }: EntryCardProps) {
         setCustomImage(null);
         setCustomArtist(null);
         setCustomTags(null);
-        setCustomKeywords(null);
+        setUserTags(entry.userTags || []);
         setRating(null);
         setIsImageRevealed(false);
         setDraft(entry.title || "");
@@ -902,184 +862,21 @@ export default function EntryCard({ entry }: EntryCardProps) {
           )}
         </div>
 
-        {/* Keywords */}
-        <div className="flex flex-wrap gap-1 text-xs">
-          {!isEditingKeywords ? (
+        {/* User Tags (formerly Keywords) */}
+        {userTags.length > 0 && (
+          <div className="flex flex-wrap gap-1 text-xs">
             <div className="flex flex-wrap items-center gap-1">
-              {(customKeywords || (entry as any).keywords)?.length > 0 && (
-                (customKeywords || (entry as any).keywords).map((keyword: string, index: number) => (
-                  <Link key={index} href={`/keyword/${encodeURIComponent(keyword.toLowerCase())}`}>
-                    <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs hover:bg-blue-200 hover:text-blue-800 transition-colors duration-200 cursor-pointer inline-flex items-center gap-1">
-                      {keywordEmojisData?.[keyword] && <span>{keywordEmojisData[keyword]}</span>}
-                      {keyword}
-                    </span>
-                  </Link>
-                ))
-              )}
-              <button 
-                onClick={() => {
-                  setCurrentKeywords(customKeywords || (entry as any).keywords || []);
-                  setKeywordsDraft("");
-                  setIsEditingKeywords(true);
-                }}
-                className="text-indigo-600 hover:text-indigo-700 transition-colors duration-200 flex items-center space-x-1 text-xs focus-visible:focus"
-              >
-                <Edit size={10} />
-                <span>
-                  {(customKeywords || (entry as any).keywords)?.length > 0 
-                    ? "Edit keywords" 
-                    : "Add keywords"
-                  }
-                </span>
-              </button>
+              {userTags.map((tag, index) => (
+                <Link key={index} href={`/tags/${encodeURIComponent(tag.toLowerCase())}`}>
+                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs hover:bg-blue-200 hover:text-blue-800 transition-colors duration-200 cursor-pointer inline-flex items-center gap-1">
+                    {tagEmojisData?.[tag] && <span>{tagEmojisData[tag]}</span>}
+                    {tag}
+                  </span>
+                </Link>
+              ))}
             </div>
-          ) : (
-            <div className="w-full space-y-3">
-              {/* Current Keywords as Removable Badges */}
-              {currentKeywords.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {currentKeywords.map((keyword, index) => (
-                    <Badge 
-                      key={index}
-                      variant="secondary" 
-                      className="text-xs flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700"
-                    >
-                      <span>{keyword}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCurrentKeywords(prev => prev.filter((_, i) => i !== index));
-                        }}
-                        className="hover:text-red-600 ml-1"
-                        disabled={isSaving}
-                      >
-                        <X size={10} />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-
-              {/* Add New Keyword Input with Autocomplete */}
-              <div className="relative">
-                <Input
-                  value={keywordsDraft}
-                  onChange={(e) => {
-                    setKeywordsDraft(e.target.value);
-                    setShowKeywordSuggestions(e.target.value.trim().length > 0);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (keywordsDraft.trim() && !currentKeywords.includes(keywordsDraft.trim())) {
-                        setCurrentKeywords(prev => [...prev, keywordsDraft.trim()]);
-                        setKeywordsDraft("");
-                        setShowKeywordSuggestions(false);
-                      }
-                    }
-                  }}
-                  placeholder="Type to add a keyword..."
-                  className="text-xs h-8"
-                  autoFocus
-                  disabled={isSaving}
-                />
-
-                {/* Autocomplete Suggestions */}
-                {showKeywordSuggestions && filteredKeywordSuggestions.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-md shadow-lg z-10 mt-1">
-                    {filteredKeywordSuggestions.map((suggestion, index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => {
-                          if (!currentKeywords.includes(suggestion)) {
-                            setCurrentKeywords(prev => [...prev, suggestion]);
-                          }
-                          setKeywordsDraft("");
-                          setShowKeywordSuggestions(false);
-                        }}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                        disabled={isSaving}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex space-x-2">
-                <button 
-                onClick={async () => {
-                  try {
-                    setIsSaving(true);
-
-                    // Add new keyword if there's text in the input
-                    let updatedKeywords = [...currentKeywords];
-                    if (keywordsDraft.trim()) {
-                      const newKeywords = keywordsDraft.split(',').map(k => k.trim()).filter(k => k);
-                      updatedKeywords = [...updatedKeywords, ...newKeywords];
-                    }
-
-                    // Update the entry with new keywords
-                    const response = await fetch("/api/custom-entries", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        entryId: entry.id,
-                        keywords: updatedKeywords,
-                      }),
-                    });
-
-                    if (!response.ok) {
-                      throw new Error("Failed to update keywords");
-                    }
-
-                    setCustomKeywords(updatedKeywords);
-                    setIsEditingKeywords(false);
-                    setKeywordsDraft("");
-
-                    toast({
-                      title: "Keywords updated",
-                      description: "Keywords have been saved successfully."
-                    });
-                  } catch (error) {
-                    console.error("Error saving keywords:", error);
-                    toast({
-                      title: "Error",
-                      description: "Failed to save keywords",
-                      variant: "destructive"
-                    });
-                  } finally {
-                    setIsSaving(false);
-                  }
-                }}
-                disabled={isSaving}
-                className="px-3 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50"
-              >
-                  {isSaving ? "Saving..." : "Save"}
-                </button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    setIsEditingKeywords(false);
-                    setCurrentKeywords([]);
-                    setKeywordsDraft("");
-                  }}
-                  disabled={isSaving}
-                  className="h-7 px-2 text-xs"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Star Rating */}
         <div className="flex items-center justify-between">

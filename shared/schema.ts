@@ -117,8 +117,12 @@ export interface Entry {
   imageUrl: string;
   externalLink: string;
   artist: string;
-  tags: string[];
+  tags: string[]; // Combined tags (originalTags + userTags)
+  originalTags?: string[]; // Tags from base entry
+  userTags?: string[]; // User-added tags
+  keywords?: string[]; // DEPRECATED: backwards compatibility only
   type: 'comic' | 'image' | 'sequence' | 'story';
   sequenceImages?: string[];
   content?: string;
+  rating?: number | null;
 }

@@ -24,63 +24,16 @@ export default function CreateEntry() {
     externalLink: "",
     artist: "",
     tags: "",
-    keywords: "",
     type: "image" as "comic" | "image" | "sequence"
   });
 
   const [sequenceImages, setSequenceImages] = useState<string[]>([""]);
   const [uploadingStates, setUploadingStates] = useState<{[key: string]: boolean}>({});
-  const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
-  const [showKeywordSuggestions, setShowKeywordSuggestions] = useState(false);
   const coverImageInputRef = useRef<HTMLInputElement>(null);
   const sequenceImageInputRefs = useRef<{[key: number]: HTMLInputElement}>({});
-  
-  // Fetch all entries to get existing keywords for autocomplete
-  const { data: allEntries } = useQuery<Entry[]>({
-    queryKey: ["/api/entries"],
-  });
-
-  // Extract all unique keywords from existing entries
-  const existingKeywords = useMemo(() => {
-    if (!allEntries) return [];
-    const keywordSet = new Set<string>();
-    allEntries.forEach(entry => {
-      if ((entry as any).keywords && Array.isArray((entry as any).keywords)) {
-        (entry as any).keywords.forEach((keyword: string) => {
-          if (keyword && keyword.trim()) {
-            keywordSet.add(keyword.trim());
-          }
-        });
-      }
-    });
-    return Array.from(keywordSet).sort();
-  }, [allEntries]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    
-    // Handle keyword autocomplete
-    if (field === "keywords") {
-      const currentInput = value.split(',').pop()?.trim() || '';
-      if (currentInput.length > 0) {
-        const matches = existingKeywords.filter(keyword =>
-          keyword.toLowerCase().includes(currentInput.toLowerCase()) &&
-          !value.split(',').map(k => k.trim()).includes(keyword)
-        ).slice(0, 5);
-        setKeywordSuggestions(matches);
-        setShowKeywordSuggestions(matches.length > 0);
-      } else {
-        setShowKeywordSuggestions(false);
-      }
-    }
-  };
-
-  const handleKeywordSuggestionClick = (suggestion: string) => {
-    const currentKeywords = formData.keywords.split(',').map(k => k.trim()).filter(k => k.length > 0);
-    const lastKeyword = currentKeywords.pop() || '';
-    const newKeywords = [...currentKeywords, suggestion].join(', ');
-    setFormData(prev => ({ ...prev, keywords: newKeywords + ', ' }));
-    setShowKeywordSuggestions(false);
   };
 
   const addSequenceImage = () => {
@@ -250,9 +203,6 @@ export default function CreateEntry() {
         artist: formData.artist.trim(),
         tags: formData.tags.trim()
           ? formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
-          : [],
-        keywords: formData.keywords.trim()
-          ? formData.keywords.split(',').map(keyword => keyword.trim()).filter(keyword => keyword.length > 0)
           : [],
         type: formData.type,
         ...(formData.type === 'sequence' && {
@@ -567,49 +517,6 @@ export default function CreateEntry() {
                 placeholder="tag1, tag2, tag3"
               />
               <p className="text-xs text-gray-500">Optional - separate multiple tags with commas</p>
-            </div>
-
-            <div className="space-y-2 relative">
-              <Label htmlFor="keywords">Keywords</Label>
-              <Input
-                id="keywords"
-                value={formData.keywords}
-                onChange={(e) => handleInputChange("keywords", e.target.value)}
-                onFocus={() => {
-                  const currentInput = formData.keywords.split(',').pop()?.trim() || '';
-                  if (currentInput.length > 0) {
-                    const matches = existingKeywords.filter(keyword =>
-                      keyword.toLowerCase().includes(currentInput.toLowerCase()) &&
-                      !formData.keywords.split(',').map(k => k.trim()).includes(keyword)
-                    ).slice(0, 5);
-                    setKeywordSuggestions(matches);
-                    setShowKeywordSuggestions(matches.length > 0);
-                  }
-                }}
-                onBlur={() => {
-                  // Delay hiding suggestions to allow clicks
-                  setTimeout(() => setShowKeywordSuggestions(false), 150);
-                }}
-                placeholder="alien abduction, space ship, sci-fi"
-              />
-              {showKeywordSuggestions && keywordSuggestions.length > 0 && (
-                <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
-                  {keywordSuggestions.map((suggestion, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
-                      onMouseDown={(e) => {
-                        e.preventDefault(); // Prevent input blur
-                        handleKeywordSuggestionClick(suggestion);
-                      }}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <p className="text-xs text-gray-500">Optional - context keywords for enhanced search, separate with commas</p>
             </div>
 
             <div className="flex space-x-3 pt-4">

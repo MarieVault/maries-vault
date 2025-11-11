@@ -34,7 +34,8 @@ export const customEntries = pgTable("custom_entries", {
   customImageUrl: text("custom_image_url"),
   customArtist: text("custom_artist"),
   customTags: text("custom_tags").array(),
-  keywords: text("keywords").array(),
+  userTags: text("user_tags").array(), // User-added tags (formerly keywords)
+  keywords: text("keywords").array(), // DEPRECATED: Use userTags instead
   rating: integer("rating"),
 });
 
@@ -49,13 +50,6 @@ export const artistLinks = pgTable("artist_links", {
 export const tagEmojis = pgTable("tag_emojis", {
   id: serial("id").primaryKey(),
   tagName: text("tag_name").notNull().unique(),
-  emoji: text("emoji").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const keywordEmojis = pgTable("keyword_emojis", {
-  id: serial("id").primaryKey(),
-  keywordName: text("keyword_name").notNull().unique(),
   emoji: text("emoji").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -87,7 +81,8 @@ export const insertCustomEntrySchema = createInsertSchema(customEntries).pick({
   customImageUrl: true,
   customArtist: true,
   customTags: true,
-  keywords: true,
+  userTags: true,
+  keywords: true, // DEPRECATED: kept for backwards compatibility
   rating: true,
 });
 
@@ -99,11 +94,6 @@ export const insertArtistLinkSchema = createInsertSchema(artistLinks).pick({
 
 export const insertTagEmojiSchema = createInsertSchema(tagEmojis).pick({
   tagName: true,
-  emoji: true,
-});
-
-export const insertKeywordEmojiSchema = createInsertSchema(keywordEmojis).pick({
-  keywordName: true,
   emoji: true,
 });
 
@@ -119,8 +109,6 @@ export type InsertArtistLink = z.infer<typeof insertArtistLinkSchema>;
 export type ArtistLink = typeof artistLinks.$inferSelect;
 export type InsertTagEmoji = z.infer<typeof insertTagEmojiSchema>;
 export type TagEmoji = typeof tagEmojis.$inferSelect;
-export type InsertKeywordEmoji = z.infer<typeof insertKeywordEmojiSchema>;
-export type KeywordEmoji = typeof keywordEmojis.$inferSelect;
 
 // Legacy interface for compatibility - remove after migration
 export interface Entry {

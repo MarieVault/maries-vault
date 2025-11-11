@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertTitleSchema, insertCustomEntrySchema, insertTagEmojiSchema, insertKeywordEmojiSchema, entries, titles, customEntries, tagEmojis, keywordEmojis } from "@shared/schema";
+import { insertTitleSchema, insertCustomEntrySchema, insertTagEmojiSchema, entries, titles, customEntries, tagEmojis } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
@@ -59,13 +59,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Get all entries from database with their customizations
       const entriesQuery = `
-        SELECT 
+        SELECT
           e.id,
           COALESCE(t.title, e.title) as title,
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
-          e.external_link as "externalLink", 
+          e.external_link as "externalLink",
           COALESCE(ce.custom_artist, e.artist) as artist,
-          COALESCE(ce.custom_tags, e.tags) as tags,
+          COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[]) as tags,
+          e.tags as "originalTags",
+          ce.user_tags as "userTags",
           e.type,
           e.sequence_images as "sequenceImages",
           ce.keywords,
@@ -86,6 +88,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         externalLink: row.externalLink || '',
         artist: row.artist || 'Unknown Artist',
         tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
+        originalTags: Array.isArray(row.originalTags) ? row.originalTags : (row.originalTags ? [row.originalTags] : []),
+        userTags: Array.isArray(row.userTags) ? row.userTags : (row.userTags ? [row.userTags] : []),
         type: row.type || 'image',
         sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
         keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
@@ -398,17 +402,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         customImageUrl: z.string().optional(),
         customArtist: z.string().optional(),
         customTags: z.array(z.string()).optional(),
-        keywords: z.array(z.string()).optional(),
+        userTags: z.array(z.string()).optional(),
+        keywords: z.array(z.string()).optional(), // DEPRECATED: backwards compatibility
         rating: z.number().min(1).max(5).optional(),
       });
-      
+
       const validatedData = schema.parse(req.body);
-      
+
+      // Handle backwards compatibility: merge keywords into userTags
+      let userTags = validatedData.userTags;
+      if (validatedData.keywords && validatedData.keywords.length > 0) {
+        userTags = [...(userTags || []), ...validatedData.keywords];
+      }
+
       const customEntry = await storage.updateCustomEntry(validatedData.entryId, {
         customImageUrl: validatedData.customImageUrl,
         customArtist: validatedData.customArtist,
         customTags: validatedData.customTags,
-        keywords: validatedData.keywords,
+        userTags: userTags,
         rating: validatedData.rating,
       });
       
@@ -437,14 +448,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         externalLink: z.string().optional(),
         artist: z.string().min(1, "Artist is required"),
         tags: z.array(z.string()).optional(),
-        keywords: z.array(z.string()).optional(),
+        userTags: z.array(z.string()).optional(),
+        keywords: z.array(z.string()).optional(), // DEPRECATED: backwards compatibility
         type: z.enum(['comic', 'image', 'sequence']).default('image'),
         sequenceImages: z.array(z.string()).optional(),
       });
-      
+
       const validatedData = schema.parse(req.body);
-      
-      const newEntry = await storage.createEntry(validatedData);
+
+      // Handle backwards compatibility: merge keywords into userTags
+      let userTags = validatedData.userTags;
+      if (validatedData.keywords && validatedData.keywords.length > 0) {
+        userTags = [...(userTags || []), ...validatedData.keywords];
+      }
+
+      const newEntry = await storage.createEntry({
+        ...validatedData,
+        userTags: userTags,
+      });
       
       res.json(newEntry);
     } catch (error) {
@@ -634,75 +655,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(result[0]);
   }));
 
-  // Keyword emoji routes
-  app.get("/api/keyword-emojis/:keywordName", handleAsyncErrors(async (req, res) => {
-    const keywordName = req.params.keywordName;
-    
-    if (!keywordName) {
-      return res.status(400).json({ message: "Keyword name is required" });
-    }
-
-    // Try exact match first, then case-insensitive
-    let keywordEmoji = await db
-      .select()
-      .from(keywordEmojis)
-      .where(eq(keywordEmojis.keywordName, keywordName))
-      .limit(1);
-
-    // If no exact match, try case-insensitive search
-    if (keywordEmoji.length === 0) {
-      const result = await db.execute(sql`
-        SELECT * FROM keyword_emojis 
-        WHERE LOWER(keyword_name) = LOWER(${keywordName}) 
-        LIMIT 1
-      `);
-      
-      if (result.rows.length > 0) {
-        const row = result.rows[0] as any;
-        keywordEmoji = [{
-          id: row.id,
-          keywordName: row.keyword_name,
-          emoji: row.emoji,
-          createdAt: row.created_at
-        }];
-      }
-    }
-
-    if (keywordEmoji.length > 0) {
-      res.json(keywordEmoji[0]);
-    } else {
-      res.status(404).json({ message: "Keyword emoji not found" });
-    }
-  }));
-
-  app.post("/api/keyword-emojis", handleZodValidation(insertKeywordEmojiSchema), handleAsyncErrors(async (req, res) => {
-    const { keywordName, emoji } = req.body;
-
-    // Check if emoji already exists for this keyword
-    const existing = await db
-      .select()
-      .from(keywordEmojis)
-      .where(eq(keywordEmojis.keywordName, keywordName))
-      .limit(1);
-
-    let result;
-    if (existing.length > 0) {
-      // Update existing emoji
-      result = await db
-        .update(keywordEmojis)
-        .set({ emoji })
-        .where(eq(keywordEmojis.keywordName, keywordName))
-        .returning();
-    } else {
-      // Insert new emoji
-      result = await db
-        .insert(keywordEmojis)
-        .values({ keywordName, emoji })
-        .returning();
-    }
-
-    res.json(result[0]);
-  }));
 
   // Extract images from Twitter/X and create entry
   app.post("/api/extract-twitter", handleAsyncErrors(async (req, res) => {

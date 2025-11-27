@@ -205,8 +205,9 @@ export default function EntryCard({ entry }: EntryCardProps) {
       setTagsDraft("");
       setShowSuggestions(false);
 
-      // Invalidate entries cache to refresh data immediately
+      // Invalidate caches to refresh data immediately
       queryClient.invalidateQueries({ queryKey: ["/api/entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tags"] });
 
       toast({
         title: "Success",
@@ -249,9 +250,10 @@ export default function EntryCard({ entry }: EntryCardProps) {
       setUserTagsDraft("");
       setShowUserTagSuggestions(false);
 
-      // Force refresh entries data
+      // Force refresh entries and tags data
       await queryClient.refetchQueries({ queryKey: ["/api/entries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tags"] });
 
       toast({
         title: "Success",
@@ -833,10 +835,17 @@ export default function EntryCard({ entry }: EntryCardProps) {
               </div>
 
               <div className="flex items-center space-x-2">
-                <Button 
+                <Button
                   type="button"
                   size="sm"
-                  onClick={() => handleTagsSave()}
+                  onClick={() => {
+                    // Include any text in the input field that hasn't been added yet
+                    let finalTags = [...currentTags];
+                    if (tagsDraft.trim() && !currentTags.includes(tagsDraft.trim())) {
+                      finalTags.push(tagsDraft.trim());
+                    }
+                    handleTagsSave(finalTags);
+                  }}
                   disabled={isSaving}
                   className="bg-indigo-600 hover:bg-indigo-700 h-7 px-2 text-xs"
                 >

@@ -140,6 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { db } = await import('./db');
 
+      // Include both custom_tags (or original tags) AND user_tags in the aggregation
       const tagsQuery = `
         SELECT
           unnested_tag as name,
@@ -147,7 +148,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ARRAY_AGG(DISTINCT COALESCE(ce.custom_artist, e.artist)) as artists
         FROM entries e
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
-        CROSS JOIN unnest(COALESCE(ce.custom_tags, e.tags)) AS unnested_tag
+        CROSS JOIN unnest(
+          COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[])
+        ) AS unnested_tag
         GROUP BY unnested_tag
         ORDER BY count DESC
       `;
@@ -180,7 +183,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
           e.external_link as "externalLink",
           COALESCE(ce.custom_artist, e.artist) as artist,
-          COALESCE(ce.custom_tags, e.tags) as tags,
+          COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[]) as tags,
+          e.tags as "originalTags",
+          ce.user_tags as "userTags",
           e.type,
           e.sequence_images as "sequenceImages",
           ce.keywords,
@@ -199,6 +204,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         externalLink: row.externalLink || '',
         artist: row.artist || 'Unknown Artist',
         tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
+        originalTags: Array.isArray(row.originalTags) ? row.originalTags : (row.originalTags ? [row.originalTags] : []),
+        userTags: Array.isArray(row.userTags) ? row.userTags : (row.userTags ? [row.userTags] : []),
         type: row.type || 'image',
         sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
         keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
@@ -656,7 +663,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
 
-  // Extract images from Twitter/X and create entry
+  // Extract images from Twitter/X and create entry (single URL - legacy)
   app.post("/api/extract-twitter", handleAsyncErrors(async (req, res) => {
     const { tweetUrl, title, tags, artist } = req.body;
 
@@ -707,6 +714,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('Error extracting Twitter images:', error);
       res.status(500).json({
         message: 'Failed to extract images from tweet',
+        error: error.message,
+      });
+    }
+  }));
+
+  // Extract images from multiple Twitter/X tweets and create a single entry
+  app.post("/api/extract-twitter-multi", handleAsyncErrors(async (req, res) => {
+    const { tweetUrls, title, tags, artist } = req.body;
+
+    if (!tweetUrls || !Array.isArray(tweetUrls) || tweetUrls.length === 0) {
+      return res.status(400).json({ message: 'At least one tweet URL is required' });
+    }
+
+    try {
+      const { extractTwitterImages } = await import('./twitter-extractor');
+
+      const allDownloadedImages: string[] = [];
+      let firstTweetData: any = null;
+
+      // Process each tweet URL sequentially to maintain order
+      for (let i = 0; i < tweetUrls.length; i++) {
+        const tweetUrl = tweetUrls[i];
+        try {
+          const { tweetData, downloadedImages } = await extractTwitterImages(
+            tweetUrl,
+            path.join(process.cwd(), 'uploads')
+          );
+
+          // Store first tweet's data for title/author info
+          if (i === 0) {
+            firstTweetData = tweetData;
+          }
+
+          // Add all images from this tweet to our collection
+          allDownloadedImages.push(...downloadedImages);
+        } catch (error: any) {
+          console.error(`Error processing tweet ${i + 1} (${tweetUrl}):`, error);
+          // Continue with other tweets, but log the error
+        }
+      }
+
+      if (allDownloadedImages.length === 0) {
+        return res.status(400).json({
+          message: 'No images could be extracted from any of the provided tweets',
+        });
+      }
+
+      // Prepare entry data using first tweet's info
+      const entryTitle = title || firstTweetData?.text?.substring(0, 100) || 'Twitter Images';
+      const entryArtist = artist || (firstTweetData ? `@${firstTweetData.author.screen_name}` : 'Unknown');
+      const entryTags = tags || ['twitter', 'imported'];
+
+      // Create entry in database
+      // If single image: use imageUrl
+      // If multiple images: use imageUrl for first, sequenceImages for all
+      const entryData: any = {
+        title: entryTitle,
+        imageUrl: allDownloadedImages[0],
+        externalLink: firstTweetData?.url || tweetUrls[0],
+        artist: entryArtist,
+        tags: entryTags,
+        type: allDownloadedImages.length > 1 ? 'sequence' : 'image',
+      };
+
+      if (allDownloadedImages.length > 1) {
+        entryData.sequenceImages = allDownloadedImages;
+      }
+
+      const entry = await storage.createEntry(entryData);
+
+      res.json({
+        success: true,
+        entry,
+        message: `Successfully imported ${allDownloadedImages.length} image(s) from ${tweetUrls.length} tweet(s)`,
+        imageCount: allDownloadedImages.length,
+        tweetCount: tweetUrls.length,
+      });
+    } catch (error: any) {
+      console.error('Error extracting Twitter images:', error);
+      res.status(500).json({
+        message: 'Failed to extract images from tweets',
         error: error.message,
       });
     }

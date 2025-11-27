@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "../lib/queryClient";
-import { ArrowLeft, Plus, Upload, Camera, Twitter } from "lucide-react";
+import { ArrowLeft, Plus, Upload, Camera, Twitter, X } from "lucide-react";
 import type { Entry } from "@shared/schema";
 
 export default function CreateEntry() {
@@ -16,7 +16,7 @@ export default function CreateEntry() {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isImportingTwitter, setIsImportingTwitter] = useState(false);
-  const [twitterUrl, setTwitterUrl] = useState("");
+  const [twitterUrls, setTwitterUrls] = useState<string[]>([""]);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -122,22 +122,41 @@ export default function CreateEntry() {
     }
   };
 
+  const addTwitterUrl = () => {
+    setTwitterUrls(prev => [...prev, ""]);
+  };
+
+  const removeTwitterUrl = (index: number) => {
+    setTwitterUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateTwitterUrl = (index: number, value: string) => {
+    setTwitterUrls(prev => prev.map((url, i) => i === index ? value : url));
+  };
+
   const handleTwitterImport = async () => {
-    if (!twitterUrl.trim()) {
+    // Filter out empty URLs
+    const validUrls = twitterUrls.filter(url => url.trim());
+
+    if (validUrls.length === 0) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Please enter a Twitter/X URL",
+        description: "Please enter at least one Twitter/X URL",
       });
       return;
     }
 
-    // Validate Twitter URL format
-    if (!twitterUrl.match(/twitter\.com\/\w+\/status\/\d+/) && !twitterUrl.match(/x\.com\/\w+\/status\/\d+/)) {
+    // Validate all Twitter URL formats
+    const invalidUrls = validUrls.filter(url =>
+      !url.match(/twitter\.com\/\w+\/status\/\d+/) && !url.match(/x\.com\/\w+\/status\/\d+/)
+    );
+
+    if (invalidUrls.length > 0) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Please enter a valid Twitter/X tweet URL",
+        description: `Invalid Twitter/X URL(s) detected. Please check all URLs.`,
       });
       return;
     }
@@ -145,21 +164,21 @@ export default function CreateEntry() {
     setIsImportingTwitter(true);
 
     try {
-      const response = await apiRequest("POST", "/api/extract-twitter", {
-        tweetUrl: twitterUrl.trim(),
+      const response = await apiRequest("POST", "/api/extract-twitter-multi", {
+        tweetUrls: validUrls,
       });
 
       if (response.success && response.entry) {
-        // Clear Twitter URL input immediately
-        setTwitterUrl("");
+        // Clear Twitter URL inputs
+        setTwitterUrls([""]);
 
         // Invalidate entries cache
         queryClient.invalidateQueries({ queryKey: ["/api/entries"] });
 
         // Show success notification with longer duration
         toast({
-          title: "✅ Import Successful!",
-          description: `Successfully imported ${response.imageCount} image(s) from Twitter and created entry "${response.entry.title}". Redirecting...`,
+          title: "Import Successful!",
+          description: `Successfully imported ${response.imageCount} image(s) from ${validUrls.length} tweet(s) and created entry "${response.entry.title}". Redirecting...`,
           duration: 3000,
         });
 
@@ -172,8 +191,8 @@ export default function CreateEntry() {
       console.error('Error importing from Twitter:', error);
       toast({
         variant: "destructive",
-        title: "❌ Import Failed",
-        description: error.message || "Failed to import tweet. Please check the URL and try again.",
+        title: "Import Failed",
+        description: error.message || "Failed to import tweets. Please check the URLs and try again.",
         duration: 5000,
       });
     } finally {
@@ -264,7 +283,7 @@ export default function CreateEntry() {
             </div>
             <div className="flex-1">
               <h2 className="text-lg font-semibold text-gray-900">Import from Twitter/X</h2>
-              <p className="text-sm text-gray-600">Paste a tweet URL to automatically extract and import images</p>
+              <p className="text-sm text-gray-600">Paste tweet URLs to automatically extract and import images into a single entry</p>
               {isImportingTwitter && (
                 <div className="mt-2 flex items-center gap-2 text-sm font-medium text-blue-700">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-700 border-t-transparent"></div>
@@ -275,25 +294,59 @@ export default function CreateEntry() {
           </div>
 
           <div className="space-y-3">
+            {twitterUrls.map((url, index) => (
+              <div key={index} className="flex gap-2">
+                <div className="flex items-center justify-center w-6 h-9 text-xs text-gray-500 font-medium">
+                  {index + 1}.
+                </div>
+                <Input
+                  value={url}
+                  onChange={(e) => updateTwitterUrl(index, e.target.value)}
+                  placeholder={index === 0 ? "https://x.com/username/status/1234567890..." : "Add another tweet URL..."}
+                  className="flex-1 bg-white"
+                  disabled={isImportingTwitter}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      // If this is the last input and it has content, add a new one
+                      if (index === twitterUrls.length - 1 && url.trim()) {
+                        addTwitterUrl();
+                      }
+                    }
+                  }}
+                />
+                {twitterUrls.length > 1 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeTwitterUrl(index)}
+                    disabled={isImportingTwitter}
+                    className="px-2 text-gray-400 hover:text-red-500"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+
             <div className="flex gap-2">
-              <Input
-                value={twitterUrl}
-                onChange={(e) => setTwitterUrl(e.target.value)}
-                placeholder="https://x.com/username/status/1234567890..."
-                className="flex-1 bg-white"
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addTwitterUrl}
                 disabled={isImportingTwitter}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleTwitterImport();
-                  }
-                }}
-              />
+                className="text-blue-600 border-blue-300 hover:bg-blue-50"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Another Link
+              </Button>
               <Button
                 type="button"
                 onClick={handleTwitterImport}
-                disabled={isImportingTwitter || !twitterUrl.trim()}
-                className="bg-blue-500 hover:bg-blue-600"
+                disabled={isImportingTwitter || !twitterUrls.some(url => url.trim())}
+                className="bg-blue-500 hover:bg-blue-600 ml-auto"
               >
                 {isImportingTwitter ? (
                   <>
@@ -303,13 +356,13 @@ export default function CreateEntry() {
                 ) : (
                   <>
                     <Twitter className="h-4 w-4 mr-2" />
-                    Import
+                    Import {twitterUrls.filter(u => u.trim()).length > 1 ? `${twitterUrls.filter(u => u.trim()).length} Tweets` : 'Tweet'}
                   </>
                 )}
               </Button>
             </div>
             <p className="text-xs text-gray-500">
-              ✨ Works with tweets containing images • No API key needed • Creates entry automatically
+              Add multiple tweet URLs to combine their images into a single entry. First tweet = first image(s), etc.
             </p>
           </div>
         </div>

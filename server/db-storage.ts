@@ -111,4 +111,24 @@ export class DatabaseStorage implements IStorage {
   async deleteArtistLink(id: number): Promise<void> {
     await db.delete(artistLinks).where(eq(artistLinks.id, id));
   }
+
+  async appendSequenceImage(entryId: number, imageUrl: string): Promise<any> {
+    // Get current entry
+    const entry = await db.select().from(entries).where(eq(entries.id, entryId)).limit(1);
+    if (!entry[0]) {
+      throw new Error('Entry not found');
+    }
+
+    // Append new image to sequence
+    const currentImages = entry[0].sequenceImages || [];
+    const updatedImages = [...currentImages, imageUrl];
+
+    // Update entry
+    const result = await db.update(entries)
+      .set({ sequenceImages: updatedImages })
+      .where(eq(entries.id, entryId))
+      .returning();
+
+    return result[0];
+  }
 }

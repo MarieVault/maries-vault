@@ -492,6 +492,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ message: 'Entry deleted successfully' });
   }));
 
+  // Append image to sequence
+  app.post("/api/entries/:entryId/sequence-images", parseIntParam('entryId'), handleAsyncErrors(async (req, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const { imageUrl } = req.body;
+
+    if (!imageUrl) {
+      return res.status(400).json({ message: 'Image URL is required' });
+    }
+
+    const updatedEntry = await (storage as any).appendSequenceImage(entryId, imageUrl);
+    res.json({ success: true, entry: updatedEntry });
+  }));
+
+  // Append images from Twitter/X URLs to existing sequence
+  app.post("/api/entries/:entryId/sequence-images/twitter", parseIntParam('entryId'), handleAsyncErrors(async (req, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const { tweetUrls } = req.body;
+
+    if (!tweetUrls || !Array.isArray(tweetUrls) || tweetUrls.length === 0) {
+      return res.status(400).json({ message: 'At least one tweet URL is required' });
+    }
+
+    // Validate entry exists and is a sequence
+    const allEntries = await storage.getAllEntries();
+    const entry = allEntries.find((e: any) => e.id === entryId);
+
+    if (!entry) {
+      return res.status(404).json({ message: 'Entry not found' });
+    }
+
+    if (entry.type !== 'sequence') {
+      return res.status(400).json({ message: 'Entry must be a sequence to add images' });
+    }
+
+    try {
+      const { extractTwitterImages } = await import('./twitter-extractor');
+      const allDownloadedImages: string[] = [];
+
+      // Process each tweet URL sequentially to maintain order
+      for (const tweetUrl of tweetUrls) {
+        try {
+          const { downloadedImages } = await extractTwitterImages(
+            tweetUrl,
+            path.join(process.cwd(), 'uploads')
+          );
+          allDownloadedImages.push(...downloadedImages);
+        } catch (error: any) {
+          console.error(`Error processing tweet (${tweetUrl}):`, error);
+          // Continue with other tweets
+        }
+      }
+
+      if (allDownloadedImages.length === 0) {
+        return res.status(400).json({
+          message: 'No images could be extracted from the provided tweets',
+        });
+      }
+
+      // Append all downloaded images to the sequence
+      let updatedEntry;
+      for (const imageUrl of allDownloadedImages) {
+        updatedEntry = await (storage as any).appendSequenceImage(entryId, imageUrl);
+      }
+
+      res.json({
+        success: true,
+        entry: updatedEntry,
+        message: `Successfully added ${allDownloadedImages.length} image(s) from ${tweetUrls.length} tweet(s)`,
+        imageCount: allDownloadedImages.length,
+      });
+    } catch (error: any) {
+      console.error('Error extracting Twitter images:', error);
+      res.status(500).json({
+        message: 'Failed to extract images from tweets',
+        error: error.message,
+      });
+    }
+  }));
+
   // Artist links routes
   app.get('/api/artists/:artistName/links', async (req, res) => {
     try {

@@ -194,12 +194,15 @@ export default function EntryCard({ entry }: EntryCardProps) {
     setIsSaving(true);
 
     try {
+      // Save all tags as customTags and clear userTags (since we now edit them together)
       await apiRequest("POST", "/api/custom-entries", {
         entryId: entry.id,
         customTags: finalTags,
+        userTags: [], // Clear userTags since all tags are now in customTags
       });
 
       setCustomTags(finalTags);
+      setUserTags([]); // Clear local userTags state
       setIsEditingTags(false);
       setCurrentTags([]);
       setTagsDraft("");
@@ -739,7 +742,8 @@ export default function EntryCard({ entry }: EntryCardProps) {
         <div className="flex flex-wrap gap-1 text-xs">
           {!isEditingTags ? (
             <div className="flex flex-wrap items-center gap-1">
-              {(customTags || entry.tags)?.map((tag, index) => (
+              {/* Display combined tags: use local state if edited, otherwise use entry.tags from API (which already combines custom_tags + user_tags) */}
+              {(customTags ? [...customTags, ...userTags] : entry.tags)?.map((tag, index) => (
                 <Link key={index} href={`/tags/${encodeURIComponent(tag.toLowerCase())}`}>
                   <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-full text-xs hover:bg-indigo-100 hover:text-indigo-700 transition-colors duration-200 cursor-pointer inline-flex items-center gap-1">
                     {tagEmojisData?.[tag] && <span>{tagEmojisData[tag]}</span>}
@@ -747,9 +751,12 @@ export default function EntryCard({ entry }: EntryCardProps) {
                   </span>
                 </Link>
               ))}
-              <button 
+              <button
                 onClick={() => {
-                  setCurrentTags(customTags || entry.tags || []);
+                  // When editing, combine custom_tags (or original tags) with user_tags so all displayed tags are editable
+                  const baseTags = customTags || entry.originalTags || [];
+                  const allEditableTags = [...baseTags, ...(userTags || [])];
+                  setCurrentTags(allEditableTags);
                   setTagsDraft("");
                   setIsEditingTags(true);
                 }}
@@ -871,21 +878,6 @@ export default function EntryCard({ entry }: EntryCardProps) {
           )}
         </div>
 
-        {/* User Tags (formerly Keywords) */}
-        {userTags.length > 0 && (
-          <div className="flex flex-wrap gap-1 text-xs">
-            <div className="flex flex-wrap items-center gap-1">
-              {userTags.map((tag, index) => (
-                <Link key={index} href={`/tags/${encodeURIComponent(tag.toLowerCase())}`}>
-                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs hover:bg-blue-200 hover:text-blue-800 transition-colors duration-200 cursor-pointer inline-flex items-center gap-1">
-                    {tagEmojisData?.[tag] && <span>{tagEmojisData[tag]}</span>}
-                    {tag}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Star Rating */}
         <div className="flex items-center justify-between">
@@ -917,6 +909,18 @@ export default function EntryCard({ entry }: EntryCardProps) {
         </div>
 
 
+
+        {/* View Image Link (for single images) */}
+        {!isSequence && !isComic && !isStory && displayImage && displayImage !== '/placeholder.jpg' && (
+          <div className="pt-2">
+            <Link href={`/image/${entry.id}`}>
+              <button className="inline-flex items-center space-x-2 text-indigo-600 hover:text-indigo-700 transition-colors duration-200 text-sm font-medium focus-visible:focus">
+                <span>View Image</span>
+                <ImageIcon size={12} />
+              </button>
+            </Link>
+          </div>
+        )}
 
         {/* Sequence Gallery Link */}
         {isSequence && entry.sequenceImages && entry.sequenceImages.length > 0 && (

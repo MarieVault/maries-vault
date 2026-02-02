@@ -18,6 +18,8 @@ import StoryViewer from "@/pages/StoryViewer";
 import ArtistRankings from "@/pages/ArtistRankings";
 import ShareHandler from "@/pages/ShareHandler";
 import InstallPWA from "@/pages/InstallPWA";
+import TwitterImport from "@/pages/TwitterImport";
+import ImageViewer from "@/pages/ImageViewer";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -28,16 +30,11 @@ function Router() {
       <Route path="/artist/:artistName" component={ArtistPage} />
       <Route path="/tags" component={Tags} />
       <Route path="/tags/:tagName" component={TagPage} />
-      {/* Redirect old keyword routes to tags */}
-      <Route path="/keywords">
-        {() => { window.location.href = '/tags'; return null; }}
-      </Route>
-      <Route path="/keyword/:keyword">
-        {(params) => { window.location.href = `/tags/${params.keyword}`; return null; }}
-      </Route>
       <Route path="/titles" component={Titles} />
+      <Route path="/twitter" component={TwitterImport} />
       <Route path="/create" component={CreateEntry} />
       <Route path="/sequence/:id" component={SequenceGallery} />
+      <Route path="/image/:id" component={ImageViewer} />
       <Route path="/story/:id" component={StoryViewer} />
       <Route path="/artist-rankings" component={ArtistRankings} />
       <Route path="/share-handler" component={ShareHandler} />

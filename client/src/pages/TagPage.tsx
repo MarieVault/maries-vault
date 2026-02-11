@@ -32,8 +32,10 @@ export default function TagPage() {
   // Stable random order - shuffle once when entries change
   const shuffledOrderRef = useRef<number[]>([]);
 
-  const { data: allEntries, isLoading } = useQuery<Entry[]>({
-    queryKey: ["/api/entries"],
+  // Fetch entries for this specific tag from server
+  const { data: tagEntries = [], isLoading } = useQuery<Entry[]>({
+    queryKey: [`/api/tags/${tagName}/entries`],
+    enabled: !!tagName,
   });
 
   // Fetch tag emoji (server handles case-insensitive lookup)
@@ -74,7 +76,7 @@ export default function TagPage() {
       
       // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: [`/api/tag-emojis/${tagName}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/entries"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/tags/${tagName}/entries`] });
       
       toast({
         title: "Success",
@@ -90,18 +92,12 @@ export default function TagPage() {
     }
   };
 
-  // Filter entries by the current tag
-  const tagEntries = useMemo(() => {
-    if (!allEntries || !tagName) return [];
-    const filtered = allEntries.filter(entry =>
-      entry.tags.some(tag => tag.toLowerCase() === tagName.toLowerCase())
-    );
-
-    // Generate stable random order when entries change
-    shuffledOrderRef.current = filtered.map((_, i) => i).sort(() => Math.random() - 0.5);
-
-    return filtered;
-  }, [allEntries, tagName]);
+  // Generate stable random order when entries change
+  useEffect(() => {
+    if (tagEntries.length > 0) {
+      shuffledOrderRef.current = tagEntries.map((_, i) => i).sort(() => Math.random() - 0.5);
+    }
+  }, [tagEntries]);
 
   // Get artists who have work with this tag
   const artistsInTag = useMemo(() => {

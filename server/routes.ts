@@ -240,6 +240,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get entries for a specific tag
+  app.get("/api/tags/:tagName/entries", async (req, res) => {
+    try {
+      const tagName = decodeURIComponent(req.params.tagName).toLowerCase();
+      const { db } = await import('./db');
+
+      // Find entries where the tag appears in custom_tags, original tags, or user_tags
+      const result = await db.execute(sql`
+        SELECT
+          e.id,
+          COALESCE(t.title, e.title) as title,
+          COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
+          e.external_link as "externalLink",
+          COALESCE(ce.custom_artist, e.artist) as artist,
+          COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[]) as tags,
+          e.tags as "originalTags",
+          ce.user_tags as "userTags",
+          e.type,
+          e.sequence_images as "sequenceImages",
+          ce.keywords,
+          ce.rating
+        FROM entries e
+        LEFT JOIN titles t ON e.id = t.entry_id
+        LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        WHERE EXISTS (
+          SELECT 1 FROM unnest(COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[])) AS tag
+          WHERE LOWER(tag) = ${tagName}
+        )
+        ORDER BY e.id
+      `);
+
+      const dbEntries = result.rows.map((row: any) => ({
+        id: row.id,
+        title: row.title || 'Untitled',
+        imageUrl: row.imageUrl || '',
+        externalLink: row.externalLink || '',
+        artist: row.artist || 'Unknown Artist',
+        tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
+        originalTags: Array.isArray(row.originalTags) ? row.originalTags : (row.originalTags ? [row.originalTags] : []),
+        userTags: Array.isArray(row.userTags) ? row.userTags : (row.userTags ? [row.userTags] : []),
+        type: row.type || 'image',
+        sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
+        keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
+        rating: row.rating || null,
+      }));
+
+      res.json(dbEntries);
+    } catch (error) {
+      console.error('Error loading tag entries:', error);
+      res.status(500).json({ message: 'Failed to load tag entries' });
+    }
+  });
+
   // Get entries for a specific artist
   app.get("/api/artists/:artistName/entries", async (req, res) => {
     try {

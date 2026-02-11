@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import EmojiPicker from "emoji-picker-react";
@@ -28,6 +28,9 @@ export default function TagPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [tagEmoji, setTagEmoji] = useState<string>("");
   const { toast } = useToast();
+
+  // Stable random order - shuffle once when entries change
+  const shuffledOrderRef = useRef<number[]>([]);
 
   const { data: allEntries, isLoading } = useQuery<Entry[]>({
     queryKey: ["/api/entries"],
@@ -90,9 +93,14 @@ export default function TagPage() {
   // Filter entries by the current tag
   const tagEntries = useMemo(() => {
     if (!allEntries || !tagName) return [];
-    return allEntries.filter(entry => 
+    const filtered = allEntries.filter(entry =>
       entry.tags.some(tag => tag.toLowerCase() === tagName.toLowerCase())
     );
+
+    // Generate stable random order when entries change
+    shuffledOrderRef.current = filtered.map((_, i) => i).sort(() => Math.random() - 0.5);
+
+    return filtered;
   }, [allEntries, tagName]);
 
   // Get artists who have work with this tag
@@ -150,9 +158,15 @@ export default function TagPage() {
 
     // Sort
     if (sortBy === "random") {
-      filtered = [...filtered].sort(() => Math.random() - 0.5);
+      // Use stable shuffled order
+      const orderMap = new Map(shuffledOrderRef.current.map((origIdx, newIdx) => [origIdx, newIdx]));
+      filtered = [...filtered].sort((a, b) => {
+        const aOrigIdx = tagEntries.indexOf(a);
+        const bOrigIdx = tagEntries.indexOf(b);
+        return (orderMap.get(aOrigIdx) ?? 0) - (orderMap.get(bOrigIdx) ?? 0);
+      });
     } else if (sortBy === "artist") {
-      filtered = [...filtered].sort((a, b) => 
+      filtered = [...filtered].sort((a, b) =>
         (a.artist || "Unknown Artist").localeCompare(b.artist || "Unknown Artist")
       );
     } else if (sortBy === "title") {
@@ -160,7 +174,7 @@ export default function TagPage() {
     }
 
     return filtered;
-  }, [tagEntries, searchTerm, artistFilter, sortBy]);
+  }, [tagEntries, searchTerm, artistFilter, typeFilter, sortBy]);
 
   // Find the actual case of the tag from the entries for consistent display
   const displayTagName = useMemo(() => {
@@ -377,13 +391,15 @@ export default function TagPage() {
             </Select>
 
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-24">
+              <SelectTrigger className="w-28">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Both</SelectItem>
+                <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="comic">Comics</SelectItem>
                 <SelectItem value="image">Images</SelectItem>
+                <SelectItem value="sequence">Sequences</SelectItem>
+                <SelectItem value="story">Stories</SelectItem>
               </SelectContent>
             </Select>
 

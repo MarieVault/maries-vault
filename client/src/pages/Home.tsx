@@ -257,11 +257,11 @@ export default function Home() {
                 <Trophy className="text-yellow-600" size={16} />
                 <span>Artist Rankings</span>
               </h3>
-              <p className="text-gray-600 text-sm mb-3">Rank artists in tiers with drag-and-drop</p>
+              <p className="text-gray-600 text-sm mb-3">See top artists ranked by weighted ratings</p>
               <Link href="/artist-rankings">
-                <Button 
-                  variant="outline" 
-                  className="w-full" 
+                <Button
+                  variant="outline"
+                  className="w-full"
                 >
                   Artist Rankings
                 </Button>

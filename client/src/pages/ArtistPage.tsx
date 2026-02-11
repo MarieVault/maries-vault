@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,9 @@ export default function ArtistPage() {
   const [newLinkUrl, setNewLinkUrl] = useState("");
   
   const queryClient = useQueryClient();
+
+  // Stable random order - shuffle once when entries change
+  const shuffledOrderRef = useRef<number[]>([]);
 
   const { data: artistEntries, isLoading } = useQuery<Entry[]>({
     queryKey: [`/api/artists/${encodeURIComponent(artistName || '')}/entries`],
@@ -70,6 +73,13 @@ export default function ArtistPage() {
     },
   });
 
+  // Generate stable random order when entries change
+  useEffect(() => {
+    if (artistEntries && artistEntries.length > 0) {
+      shuffledOrderRef.current = artistEntries.map((_, i) => i).sort(() => Math.random() - 0.5);
+    }
+  }, [artistEntries]);
+
   // Get all unique tags for this artist
   const artistTags = useMemo(() => {
     if (!artistEntries) return [];
@@ -80,14 +90,16 @@ export default function ArtistPage() {
     return Array.from(tagSet).sort();
   }, [artistEntries]);
 
-  // Count comics vs images
+  // Count entry types
   const typeStats = useMemo(() => {
-    if (!artistEntries) return { comics: 0, images: 0 };
+    if (!artistEntries) return { comics: 0, images: 0, sequences: 0, stories: 0 };
     return artistEntries.reduce((acc, entry) => {
       if (entry.type === 'comic') acc.comics++;
+      else if (entry.type === 'sequence') acc.sequences++;
+      else if (entry.type === 'story') acc.stories++;
       else acc.images++;
       return acc;
-    }, { comics: 0, images: 0 });
+    }, { comics: 0, images: 0, sequences: 0, stories: 0 });
   }, [artistEntries]);
 
   // Apply filters and sorting
@@ -120,7 +132,13 @@ export default function ArtistPage() {
 
     // Sort
     if (sortBy === "random") {
-      filtered = [...filtered].sort(() => Math.random() - 0.5);
+      // Use stable shuffled order
+      const orderMap = new Map(shuffledOrderRef.current.map((origIdx, newIdx) => [origIdx, newIdx]));
+      filtered = [...filtered].sort((a, b) => {
+        const aOrigIdx = artistEntries?.indexOf(a) ?? 0;
+        const bOrigIdx = artistEntries?.indexOf(b) ?? 0;
+        return (orderMap.get(aOrigIdx) ?? 0) - (orderMap.get(bOrigIdx) ?? 0);
+      });
     } else if (sortBy === "title") {
       filtered = [...filtered].sort((a, b) => a.title.localeCompare(b.title));
     } else if (sortBy === "type") {
@@ -408,13 +426,15 @@ export default function ArtistPage() {
           {/* Filters */}
           <div className="flex space-x-2">
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-24">
+              <SelectTrigger className="w-28">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Both</SelectItem>
+                <SelectItem value="all">All Types</SelectItem>
                 <SelectItem value="comic">Comics</SelectItem>
                 <SelectItem value="image">Images</SelectItem>
+                <SelectItem value="sequence">Sequences</SelectItem>
+                <SelectItem value="story">Stories</SelectItem>
               </SelectContent>
             </Select>
 

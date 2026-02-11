@@ -119,8 +119,19 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Entry not found');
     }
 
-    // Append new image to sequence
     const currentImages = entry[0].sequenceImages || [];
+
+    // If this is a single image entry, convert it to a sequence
+    if (entry[0].type === 'image' && currentImages.length === 0) {
+      const updatedImages = [entry[0].imageUrl, imageUrl].filter(Boolean) as string[];
+      const result = await db.update(entries)
+        .set({ type: 'sequence', sequenceImages: updatedImages })
+        .where(eq(entries.id, entryId))
+        .returning();
+      return result[0];
+    }
+
+    // Append new image to existing sequence
     const updatedImages = [...currentImages, imageUrl];
 
     // Update entry

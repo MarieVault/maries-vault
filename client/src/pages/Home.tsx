@@ -6,7 +6,7 @@ import Splash from "../components/Splash";
 import EntryCard from "../components/EntryCard";
 import Logo from "../components/Logo";
 import { Button } from "@/components/ui/button";
-import { Dice1, Users, Lock, Grid3X3, Square, Plus, Heart, Tag, BookOpen, Trophy } from "lucide-react";
+import { Dice1, Users, Lock, Grid3X3, Square, Plus, Heart, Tag, Trophy } from "lucide-react";
 import type { Entry } from "@shared/schema";
 
 export default function Home() {
@@ -114,20 +114,7 @@ export default function Home() {
                 <Users size={16} className="text-indigo-600" />
               </Button>
             </Link>
-            
-            <Link href="/titles">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-10 h-10 rounded-full p-0 hover:bg-muted transition-all duration-200"
-                aria-label="View title keywords"
-              >
-                <BookOpen size={16} className="text-indigo-600" />
-              </Button>
-            </Link>
-            
 
-            
             <Button
               onClick={toggleViewMode}
               size="sm"

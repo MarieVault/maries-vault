@@ -9,7 +9,6 @@ import { AuthProvider } from "./context/AuthContext";
 import Home from "@/pages/Home";
 import Artists from "@/pages/Artists";
 import Tags from "@/pages/Tags";
-import Titles from "@/pages/Titles";
 import TagPage from "@/pages/TagPage";
 import ArtistPage from "@/pages/ArtistPage";
 import CreateEntry from "@/pages/CreateEntry";
@@ -30,7 +29,6 @@ function Router() {
       <Route path="/artist/:artistName" component={ArtistPage} />
       <Route path="/tags" component={Tags} />
       <Route path="/tags/:tagName" component={TagPage} />
-      <Route path="/titles" component={Titles} />
       <Route path="/twitter" component={TwitterImport} />
       <Route path="/create" component={CreateEntry} />
       <Route path="/sequence/:id" component={SequenceGallery} />

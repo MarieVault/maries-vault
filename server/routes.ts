@@ -135,6 +135,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get artist rankings with Bayesian average
+  app.get("/api/artists/rankings", async (req, res) => {
+    try {
+      const { db } = await import('./db');
+      const MIN_RATED_ENTRIES = 3; // Minimum rated entries to appear in rankings
+
+      // Calculate artist rankings using Bayesian average
+      // Formula: weighted_rating = (v/(v+m)) * R + (m/(v+m)) * C
+      // where: R = artist avg, v = rated count, m = min threshold, C = global avg
+      const rankingsQuery = `
+        WITH global_stats AS (
+          SELECT
+            AVG(ce.rating)::float as global_avg
+          FROM entries e
+          JOIN custom_entries ce ON e.id = ce.entry_id
+          WHERE ce.rating IS NOT NULL
+        ),
+        artist_stats AS (
+          SELECT
+            COALESCE(ce.custom_artist, e.artist) as name,
+            COUNT(*) as total_entries,
+            COUNT(ce.rating) as rated_entries,
+            AVG(ce.rating)::float as avg_rating,
+            ARRAY_AGG(DISTINCT unnested_tag) FILTER (WHERE unnested_tag IS NOT NULL) as tags
+          FROM entries e
+          LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+          LEFT JOIN LATERAL unnest(COALESCE(ce.custom_tags, e.tags)) AS unnested_tag ON true
+          GROUP BY COALESCE(ce.custom_artist, e.artist)
+          HAVING COUNT(ce.rating) >= ${MIN_RATED_ENTRIES}
+        )
+        SELECT
+          a.name,
+          a.total_entries,
+          a.rated_entries,
+          a.avg_rating,
+          a.tags,
+          -- Bayesian average: (v/(v+m)) * R + (m/(v+m)) * C
+          (a.rated_entries::float / (a.rated_entries + ${MIN_RATED_ENTRIES})) * a.avg_rating +
+          (${MIN_RATED_ENTRIES}::float / (a.rated_entries + ${MIN_RATED_ENTRIES})) * COALESCE(g.global_avg, 3.0) as weighted_rating
+        FROM artist_stats a
+        CROSS JOIN global_stats g
+        WHERE a.name != 'Unknown Artist' AND a.name != 'Unknown'
+        ORDER BY weighted_rating DESC, a.rated_entries DESC
+      `;
+
+      const result = await db.execute(rankingsQuery);
+
+      const rankings = result.rows.map((row: any, index: number) => ({
+        rank: index + 1,
+        name: row.name,
+        totalEntries: parseInt(row.total_entries),
+        ratedEntries: parseInt(row.rated_entries),
+        averageRating: parseFloat(row.avg_rating) || 0,
+        weightedRating: parseFloat(row.weighted_rating) || 0,
+        tags: Array.isArray(row.tags) ? row.tags.filter(Boolean) : []
+      }));
+
+      res.json({
+        rankings,
+        metadata: {
+          minRatedEntries: MIN_RATED_ENTRIES,
+          totalRankedArtists: rankings.length
+        }
+      });
+    } catch (error) {
+      console.error('Error loading artist rankings:', error);
+      res.status(500).json({ message: 'Failed to load artist rankings' });
+    }
+  });
+
   // Get aggregated tags list with counts
   app.get("/api/tags", async (req, res) => {
     try {
@@ -522,8 +592,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(404).json({ message: 'Entry not found' });
     }
 
-    if (entry.type !== 'sequence') {
-      return res.status(400).json({ message: 'Entry must be a sequence to add images' });
+    if (entry.type !== 'sequence' && entry.type !== 'image') {
+      return res.status(400).json({ message: 'Entry must be an image or sequence to add images' });
     }
 
     try {

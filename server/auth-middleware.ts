@@ -2,8 +2,9 @@ import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
-// Environment variable for JWT secret (should be set in production)
+// Environment variables for auth (should be set in production)
 const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-key-change-in-production";
+const AUTH_PASSCODE = process.env.AUTH_PASSCODE || "13";
 
 // Your device information - update these with your actual iPhone Safari details
 const ALLOWED_DEVICE = {
@@ -94,8 +95,8 @@ function verifyAuthToken(token: string, currentFingerprint: DeviceFingerprint): 
 export function handleLogin(req: Request, res: Response) {
   const { passcode } = req.body;
   
-  // Check passcode (you can change this)
-  if (passcode !== "13") {
+  // Check passcode (set AUTH_PASSCODE env var to change)
+  if (passcode !== AUTH_PASSCODE) {
     return res.status(401).json({ 
       success: false, 
       message: "Invalid passcode" 
@@ -118,7 +119,7 @@ export function handleLogin(req: Request, res: Response) {
   // Set secure HTTP-only cookie
   res.cookie('auth_token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production' && process.env.HTTPS === 'true', // HTTPS in production
+    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     path: '/'

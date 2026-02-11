@@ -1,25 +1,34 @@
-import { useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Palette, Star, TrendingUp, BarChart3 } from "lucide-react";
-import type { Entry } from "@shared/schema";
+import { ArrowLeft, Palette, Star, TrendingUp, BarChart3, Award } from "lucide-react";
 
 interface ArtistRankingData {
+  rank: number;
   name: string;
   totalEntries: number;
   ratedEntries: number;
   averageRating: number;
-  entries: Entry[];
+  weightedRating: number;
   tags: string[];
 }
 
-function ArtistRankingCard({ artist, rank }: { artist: ArtistRankingData; rank: number }) {
+interface RankingsResponse {
+  rankings: ArtistRankingData[];
+  metadata: {
+    minRatedEntries: number;
+    totalRankedArtists: number;
+  };
+}
+
+function ArtistRankingCard({ artist }: { artist: ArtistRankingData }) {
+  const { rank } = artist;
+
   const getRankIcon = (rank: number) => {
     if (rank === 1) return <TrendingUp className="text-yellow-500" size={20} />;
-    if (rank === 2) return <BarChart3 className="text-gray-500" size={20} />;
-    if (rank === 3) return <BarChart3 className="text-amber-600" size={20} />;
+    if (rank === 2) return <Award className="text-gray-400" size={20} />;
+    if (rank === 3) return <Award className="text-amber-600" size={20} />;
     return <Palette className="text-indigo-600" size={16} />;
   };
 
@@ -31,111 +40,60 @@ function ArtistRankingCard({ artist, rank }: { artist: ArtistRankingData; rank: 
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center space-x-3">
-          <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${getRankBadge(rank)}`}>
-            {rank}
+    <Link href={`/artists/${encodeURIComponent(artist.name)}`}>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-3">
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm ${getRankBadge(rank)}`}>
+              {rank}
+            </div>
+            {getRankIcon(rank)}
+            <div>
+              <h3 className="font-semibold text-gray-900">{artist.name}</h3>
+              <p className="text-xs text-gray-500">
+                {artist.totalEntries} {artist.totalEntries === 1 ? 'entry' : 'entries'}
+                {' '}({artist.ratedEntries} rated)
+              </p>
+            </div>
           </div>
-          {getRankIcon(rank)}
-          <div>
-            <h3 className="font-semibold text-gray-900">{artist.name}</h3>
+          <div className="text-right">
+            <div className="flex items-center space-x-1">
+              <Star className="text-yellow-500 fill-current" size={16} />
+              <span className="font-bold text-lg text-gray-900">
+                {artist.averageRating.toFixed(1)}
+              </span>
+            </div>
             <p className="text-xs text-gray-500">
-              {artist.totalEntries} {artist.totalEntries === 1 ? 'entry' : 'entries'}
-              ({artist.ratedEntries} rated)
+              weighted: {artist.weightedRating.toFixed(2)}
             </p>
           </div>
         </div>
-        <div className="text-right">
-          <div className="flex items-center space-x-1">
-            <Star className="text-yellow-500 fill-current" size={16} />
-            <span className="font-bold text-lg text-gray-900">
-              {artist.averageRating.toFixed(1)}
-            </span>
-          </div>
-          <p className="text-xs text-gray-500">avg rating</p>
+
+        <div className="flex flex-wrap gap-1">
+          {artist.tags.slice(0, 3).map(tag => (
+            <Badge key={tag} variant="secondary" className="text-xs px-2 py-0">
+              {tag}
+            </Badge>
+          ))}
+          {artist.tags.length > 3 && (
+            <Badge variant="outline" className="text-xs px-2 py-0">
+              +{artist.tags.length - 3} more
+            </Badge>
+          )}
         </div>
       </div>
-
-      <div className="flex flex-wrap gap-1">
-        {artist.tags.slice(0, 3).map(tag => (
-          <Badge key={tag} variant="secondary" className="text-xs px-2 py-0">
-            {tag}
-          </Badge>
-        ))}
-        {artist.tags.length > 3 && (
-          <Badge variant="outline" className="text-xs px-2 py-0">
-            +{artist.tags.length - 3} more
-          </Badge>
-        )}
-      </div>
-    </div>
+    </Link>
   );
 }
 
 
 export default function ArtistRankings() {
-  const { data: entries, isLoading } = useQuery<Entry[]>({
-    queryKey: ["/api/entries"],
+  const { data, isLoading } = useQuery<RankingsResponse>({
+    queryKey: ["/api/artists/rankings"],
   });
 
-  // Calculate artist rankings based on average rating
-  const rankedArtists = useMemo(() => {
-    if (!entries) return [];
-
-    const artistMap = new Map<string, ArtistRankingData>();
-
-    entries.forEach(entry => {
-      const artistName = entry.artist || "Unknown Artist";
-
-      if (artistName === "Unknown Artist") return;
-
-      if (!artistMap.has(artistName)) {
-        artistMap.set(artistName, {
-          name: artistName,
-          totalEntries: 0,
-          ratedEntries: 0,
-          averageRating: 0,
-          entries: [],
-          tags: []
-        });
-      }
-
-      const artist = artistMap.get(artistName)!;
-      artist.totalEntries++;
-      artist.entries.push(entry);
-
-      // Add rating if present
-      if (entry.rating && typeof entry.rating === 'number') {
-        artist.ratedEntries++;
-      }
-
-      // Collect unique tags for this artist
-      entry.tags.forEach(tag => {
-        if (!artist.tags.includes(tag)) {
-          artist.tags.push(tag);
-        }
-      });
-    });
-
-    // Calculate average ratings and filter artists with ratings
-    const artistsWithRatings = Array.from(artistMap.values())
-      .map(artist => {
-        const ratedEntries = artist.entries.filter(entry => entry.rating && typeof entry.rating === 'number');
-        if (ratedEntries.length === 0) {
-          return { ...artist, averageRating: 0 };
-        }
-
-        const totalRating = ratedEntries.reduce((sum, entry) => sum + (entry.rating || 0), 0);
-        const averageRating = totalRating / ratedEntries.length;
-
-        return { ...artist, averageRating };
-      })
-      .filter(artist => artist.ratedEntries > 0) // Only show artists with at least one rating
-      .sort((a, b) => b.averageRating - a.averageRating); // Sort by highest rating first
-
-    return artistsWithRatings;
-  }, [entries]);
+  const rankedArtists = data?.rankings || [];
+  const minRatedEntries = data?.metadata?.minRatedEntries || 3;
 
   if (isLoading) {
     return (
@@ -187,26 +145,26 @@ export default function ArtistRankings() {
         <div className="mb-6">
           <div className="flex items-center space-x-2 mb-2">
             <BarChart3 className="text-indigo-600" size={20} />
-            <h2 className="text-xl font-bold text-gray-900">Artists by Average Rating</h2>
+            <h2 className="text-xl font-bold text-gray-900">Artists by Weighted Rating</h2>
           </div>
           <p className="text-gray-600 text-sm">
-            Artists ranked by their average review score across all rated entries. Only artists with at least one rating are shown.
+            Artists ranked using Bayesian average to balance rating quality with sample size.
+            Minimum {minRatedEntries} rated entries required.
           </p>
         </div>
 
         {rankedArtists.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             <Star className="mx-auto mb-4 text-gray-300" size={48} />
-            <h3 className="text-lg font-medium text-gray-700 mb-2">No Rated Artists Found</h3>
-            <p className="text-sm">Start rating some entries to see artist rankings here!</p>
+            <h3 className="text-lg font-medium text-gray-700 mb-2">No Ranked Artists Yet</h3>
+            <p className="text-sm">Artists need at least {minRatedEntries} rated entries to appear in rankings.</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {rankedArtists.map((artist, index) => (
+            {rankedArtists.map((artist) => (
               <ArtistRankingCard
                 key={artist.name}
                 artist={artist}
-                rank={index + 1}
               />
             ))}
           </div>
@@ -217,9 +175,14 @@ export default function ArtistRankings() {
             <Star className="text-blue-600" size={16} />
             <h3 className="font-semibold text-blue-900">How Rankings Work</h3>
           </div>
+          <p className="text-sm text-blue-800 mb-2">
+            Rankings use a <strong>Bayesian average</strong> that balances an artist's rating with
+            the number of rated entries. This prevents artists with few highly-rated entries from
+            unfairly outranking artists with many consistently good entries.
+          </p>
           <p className="text-sm text-blue-800">
-            Artists are automatically ranked by their average rating across all entries with ratings.
-            The more entries an artist has rated, the more reliable their ranking becomes.
+            Artists must have at least <strong>{minRatedEntries} rated entries</strong> to appear in rankings.
+            Tap any artist card to view their full gallery.
           </p>
         </div>
       </main>

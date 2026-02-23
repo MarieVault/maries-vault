@@ -3,7 +3,7 @@
 # Marie's Vault Production Start Script
 # Make sure .env file exists with required environment variables
 
-cd /home/marfschen/maries-vault
+cd /root/maries-vault-migration/maries-vault
 
 # Check if .env file exists
 if [ ! -f .env ]; then
@@ -24,5 +24,5 @@ export $(cat .env | xargs)
 echo "Building..."
 npm run build
 
-# Start the application
-node dist/index.js
+# Start the application (exec replaces bash so systemd can cleanly manage the process)
+exec node dist/index.js

@@ -132,7 +132,7 @@ export interface Entry {
   originalTags?: string[]; // Tags from base entry
   userTags?: string[]; // User-added tags
   keywords?: string[]; // DEPRECATED: backwards compatibility only
-  type: 'comic' | 'image' | 'sequence' | 'story';
+  type: 'comic' | 'image' | 'sequence' | 'story' | 'video';
   sequenceImages?: string[];
   content?: string;
   rating?: number | null;

@@ -25,6 +25,15 @@ export interface TweetData {
       width: number;
       height: number;
     }>;
+    videos?: Array<{
+      type: 'video' | 'gif';
+      url: string;
+      variants?: Array<{
+        content_type: string;
+        url: string;
+        bitrate?: number;
+      }>;
+    }>;
   };
   created_at: string;
 }
@@ -138,11 +147,46 @@ export async function downloadImage(
 }
 
 /**
- * Extract and download all images from a Twitter/X tweet
+ * Download a video from URL and save to uploads directory as MP4
+ */
+export async function downloadVideo(
+  videoUrl: string,
+  uploadsDir: string,
+  index: number = 0
+): Promise<string> {
+  try {
+    const response = await axios.get(videoUrl, {
+      responseType: 'arraybuffer',
+      timeout: 60000,
+      headers: {
+        'User-Agent': 'MariesVault/1.0',
+      },
+    });
+
+    const timestamp = Date.now();
+    const filename = `twitter-${timestamp}-${index}.mp4`;
+    const filepath = path.join(uploadsDir, filename);
+
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    fs.writeFileSync(filepath, response.data);
+    return `/uploads/${filename}`;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      throw new Error(`Failed to download video: ${error.message}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Extract and download all media (images + videos/GIFs) from a Twitter/X tweet
  *
  * @param tweetUrl - Full Twitter/X URL (e.g., https://twitter.com/user/status/123)
- * @param uploadsDir - Directory to save downloaded images (default: uploads/)
- * @returns Object containing tweet data and paths to downloaded images
+ * @param uploadsDir - Directory to save downloaded media (default: uploads/)
+ * @returns Object containing tweet data and paths to downloaded media
  */
 export async function extractTwitterImages(
   tweetUrl: string,
@@ -157,30 +201,49 @@ export async function extractTwitterImages(
   // Fetch tweet data
   const tweetData = await fetchTweetData(tweetUrl);
 
-  // Extract image URLs
   const photos = tweetData.media?.photos || [];
-  if (photos.length === 0) {
-    throw new Error('No images found in tweet');
+  const videos = tweetData.media?.videos || [];
+
+  if (photos.length === 0 && videos.length === 0) {
+    throw new Error('No media found in tweet');
   }
 
-  const imageUrls = photos.map(photo => photo.url);
+  const downloadedMedia: string[] = [];
+  let mediaIndex = 0;
 
-  // Download all images
-  const downloadedImages: string[] = [];
-  for (let i = 0; i < imageUrls.length; i++) {
-    const imageUrl = imageUrls[i];
+  // Download photos
+  for (const photo of photos) {
     try {
-      const downloadedPath = await downloadImage(imageUrl, uploadsDir, i);
-      downloadedImages.push(downloadedPath);
+      const downloadedPath = await downloadImage(photo.url, uploadsDir, mediaIndex);
+      downloadedMedia.push(downloadedPath);
+      mediaIndex++;
     } catch (error) {
-      console.error(`Failed to download image ${i + 1}:`, error);
+      console.error(`Failed to download photo ${mediaIndex + 1}:`, error);
+      throw error;
+    }
+  }
+
+  // Download videos/GIFs — pick highest-bitrate MP4 variant
+  for (const video of videos) {
+    try {
+      const mp4Variants = (video.variants || []).filter(v => v.content_type === 'video/mp4');
+      if (mp4Variants.length === 0) {
+        console.warn(`No MP4 variant found for video in tweet ${tweetId}`);
+        continue;
+      }
+      const best = mp4Variants.reduce((a, b) => (b.bitrate ?? 0) > (a.bitrate ?? 0) ? b : a);
+      const downloadedPath = await downloadVideo(best.url, uploadsDir, mediaIndex);
+      downloadedMedia.push(downloadedPath);
+      mediaIndex++;
+    } catch (error) {
+      console.error(`Failed to download video ${mediaIndex + 1}:`, error);
       throw error;
     }
   }
 
   return {
     tweetData,
-    imageUrls,
-    downloadedImages,
+    imageUrls: photos.map(p => p.url),
+    downloadedImages: downloadedMedia,
   };
 }

@@ -596,7 +596,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tags: z.array(z.string()).optional(),
         userTags: z.array(z.string()).optional(),
         keywords: z.array(z.string()).optional(), // DEPRECATED: backwards compatibility
-        type: z.enum(['comic', 'image', 'sequence', 'story']).default('image'),
+        type: z.enum(['comic', 'image', 'sequence', 'story', 'video']).default('image'),
         sequenceImages: z.array(z.string()).optional(),
       });
 
@@ -685,7 +685,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (allDownloadedImages.length === 0) {
         return res.status(400).json({
-          message: 'No images could be extracted from the provided tweets',
+          message: 'No media could be extracted from the provided tweets',
         });
       }
 
@@ -912,7 +912,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         externalLink: tweetData.url,
         artist: entryArtist,
         tags: entryTags,
-        type: downloadedImages.length > 1 ? 'sequence' : 'image',
+        type: downloadedImages.length > 1 ? 'sequence' : (downloadedImages[0].endsWith('.mp4') ? 'video' : 'image'),
         content: tweetData.text,
       };
 
@@ -925,7 +925,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         success: true,
         entry,
-        message: `Successfully imported ${downloadedImages.length} image(s) from Twitter`,
+        message: `Successfully imported ${downloadedImages.length} media item(s) from Twitter`,
         imageCount: downloadedImages.length,
       });
     } catch (error: any) {
@@ -975,7 +975,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (allDownloadedImages.length === 0) {
         return res.status(400).json({
-          message: 'No images could be extracted from any of the provided tweets',
+          message: 'No media could be extracted from any of the provided tweets',
         });
       }
 
@@ -993,7 +993,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         externalLink: firstTweetData?.url || tweetUrls[0],
         artist: entryArtist,
         tags: entryTags,
-        type: allDownloadedImages.length > 1 ? 'sequence' : 'image',
+        type: allDownloadedImages.length > 1 ? 'sequence' : (allDownloadedImages[0].endsWith('.mp4') ? 'video' : 'image'),
       };
 
       if (allDownloadedImages.length > 1) {
@@ -1005,7 +1005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         success: true,
         entry,
-        message: `Successfully imported ${allDownloadedImages.length} image(s) from ${tweetUrls.length} tweet(s)`,
+        message: `Successfully imported ${allDownloadedImages.length} media item(s) from ${tweetUrls.length} tweet(s)`,
         imageCount: allDownloadedImages.length,
         tweetCount: tweetUrls.length,
       });

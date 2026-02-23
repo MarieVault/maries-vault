@@ -62,7 +62,7 @@ export default function TwitterImport() {
 
         toast({
           title: "Import Successful!",
-          description: `Successfully imported ${response.imageCount} image(s) from ${validUrls.length} tweet(s) and created entry "${response.entry.title}". Redirecting...`,
+          description: `Successfully imported ${response.imageCount} media item(s) from ${validUrls.length} tweet(s) and created entry "${response.entry.title}". Redirecting...`,
           duration: 3000,
         });
 
@@ -97,7 +97,7 @@ export default function TwitterImport() {
           </Button>
 
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Import from Twitter/X</h1>
-          <p className="text-gray-600">Quickly import images from tweets into your vault.</p>
+          <p className="text-gray-600">Quickly import images and videos from tweets into your vault.</p>
         </div>
 
         <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg shadow-sm border border-blue-200 p-6">
@@ -107,7 +107,7 @@ export default function TwitterImport() {
             </div>
             <div className="flex-1">
               <h2 className="text-lg font-semibold text-gray-900">Paste Tweet URLs</h2>
-              <p className="text-sm text-gray-600">Add one or more tweet URLs to extract and import their images into a single entry</p>
+              <p className="text-sm text-gray-600">Add one or more tweet URLs to extract and import their media into a single entry</p>
               {isImportingTwitter && (
                 <div className="mt-2 flex items-center gap-2 text-sm font-medium text-blue-700">
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-700 border-t-transparent"></div>

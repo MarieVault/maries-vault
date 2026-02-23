@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Edit, ExternalLink, Palette, Camera, User, Users, BookOpen, Image, Trash2, Star, X, ImageIcon, Images } from "lucide-react";
+import { Edit, ExternalLink, Palette, Camera, User, Users, BookOpen, Image, Trash2, Star, X, ImageIcon, Images, Film } from "lucide-react";
 import { apiRequest, queryClient } from "../lib/queryClient";
 import type { Entry } from "@shared/schema";
 
@@ -489,23 +489,40 @@ export default function EntryCard({ entry }: EntryCardProps) {
   const isComic = entry.type === 'comic';
   const isSequence = entry.type === 'sequence';
   const isStory = entry.type === 'story';
-  const TypeIcon = isComic ? BookOpen : (isSequence ? Images : (isStory ? BookOpen : Image));
-  const typeBorderColor = isComic ? 'border-l-orange-500' : (isSequence ? 'border-l-purple-500' : (isStory ? 'border-l-green-500' : 'border-l-indigo-500'));
+  const isVideo = entry.type === 'video';
+  const isVideoFile = (url: string) => url.endsWith('.mp4');
+  const TypeIcon = isComic ? BookOpen : (isSequence ? Images : (isStory ? BookOpen : (isVideo ? Film : Image)));
+  const typeBorderColor = isComic ? 'border-l-orange-500' : (isSequence ? 'border-l-purple-500' : (isStory ? 'border-l-green-500' : (isVideo ? 'border-l-red-500' : 'border-l-indigo-500')));
 
   return (
     <article className={`bg-white rounded-xl shadow-lg overflow-hidden mb-6 animate-slide-up border-l-4 ${typeBorderColor}`}>
       {/* Card Image */}
       <div className="relative group">
-        <img 
-          src={displayImage} 
-          alt={displayTitle}
-          className={`w-full h-56 object-cover transition-all duration-300 ${
-            !isImageRevealed ? 'blur-md grayscale' : ''
-          }`}
-          onLoadStart={handleImageStart}
-          onLoad={handleImageLoad}
-          onError={handleImageLoad}
-        />
+        {isVideoFile(displayImage) ? (
+          <video
+            src={displayImage}
+            className={`w-full h-56 object-cover transition-all duration-300 ${
+              !isImageRevealed ? 'blur-md grayscale' : ''
+            }`}
+            autoPlay
+            loop
+            muted
+            playsInline
+            onLoadStart={handleImageStart}
+            onLoadedData={handleImageLoad}
+          />
+        ) : (
+          <img
+            src={displayImage}
+            alt={displayTitle}
+            className={`w-full h-56 object-cover transition-all duration-300 ${
+              !isImageRevealed ? 'blur-md grayscale' : ''
+            }`}
+            onLoadStart={handleImageStart}
+            onLoad={handleImageLoad}
+            onError={handleImageLoad}
+          />
+        )}
 
         {/* Click-to-reveal overlay */}
         {!isImageRevealed && (
@@ -582,16 +599,18 @@ export default function EntryCard({ entry }: EntryCardProps) {
                     </h2>
                   )}
                   <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
-                    isComic 
-                      ? 'bg-orange-100 text-orange-700' 
+                    isComic
+                      ? 'bg-orange-100 text-orange-700'
                       : isSequence
                         ? 'bg-purple-100 text-purple-700'
                         : isStory
                           ? 'bg-green-100 text-green-700'
-                          : 'bg-indigo-100 text-indigo-700'
+                          : isVideo
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-indigo-100 text-indigo-700'
                   }`}>
                     <TypeIcon size={12} />
-                    <span>{isComic ? 'Comic' : isSequence ? 'Sequence' : isStory ? 'Story' : 'Image'}</span>
+                    <span>{isComic ? 'Comic' : isSequence ? 'Sequence' : isStory ? 'Story' : isVideo ? 'Video' : 'Image'}</span>
                   </div>
                 </div>
                 <button 
@@ -910,13 +929,13 @@ export default function EntryCard({ entry }: EntryCardProps) {
 
 
 
-        {/* View Image Link (for single images) */}
+        {/* View Image/Video Link (for single images and videos) */}
         {!isSequence && !isComic && !isStory && displayImage && displayImage !== '/placeholder.jpg' && (
           <div className="pt-2">
             <Link href={`/image/${entry.id}`}>
-              <button className="inline-flex items-center space-x-2 text-indigo-600 hover:text-indigo-700 transition-colors duration-200 text-sm font-medium focus-visible:focus">
-                <span>View Image</span>
-                <ImageIcon size={12} />
+              <button className={`inline-flex items-center space-x-2 transition-colors duration-200 text-sm font-medium focus-visible:focus ${isVideo ? 'text-red-600 hover:text-red-700' : 'text-indigo-600 hover:text-indigo-700'}`}>
+                <span>{isVideo ? 'View Video' : 'View Image'}</span>
+                {isVideo ? <Film size={12} /> : <ImageIcon size={12} />}
               </button>
             </Link>
           </div>

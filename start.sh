@@ -20,5 +20,9 @@ fi
 # Load environment variables from .env file
 export $(cat .env | xargs)
 
+# Build the application
+echo "Building..."
+npm run build
+
 # Start the application
 node dist/index.js

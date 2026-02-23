@@ -75,7 +75,7 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async createEntry(entryData: { title: string; imageUrl?: string; externalLink?: string; artist: string; tags?: string[]; userTags?: string[]; keywords?: string[]; type: 'comic' | 'image' | 'sequence' | 'story'; sequenceImages?: string[]; content?: string }): Promise<any> {
+  async createEntry(entryData: { title: string; imageUrl?: string; externalLink?: string; artist: string; circleId?: number | null; tags?: string[]; userTags?: string[]; keywords?: string[]; type: 'comic' | 'image' | 'sequence' | 'story'; sequenceImages?: string[]; content?: string }): Promise<any> {
     const result = await db.insert(entries).values({
       ...entryData,
       imageUrl: entryData.imageUrl || '',

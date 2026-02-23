@@ -65,6 +65,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
           e.external_link as "externalLink",
           COALESCE(ce.custom_artist, e.artist) as artist,
+          e.circle_id as "circleId",
+          c.name as circle,
           COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[]) as tags,
           e.tags as "originalTags",
           ce.user_tags as "userTags",
@@ -75,6 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        LEFT JOIN circles c ON e.circle_id = c.id
         ORDER BY e.id
       `;
       
@@ -87,6 +90,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imageUrl: row.imageUrl || '',
         externalLink: row.externalLink || '',
         artist: row.artist || 'Unknown Artist',
+        circleId: row.circleId ?? null,
+        circle: row.circle || null,
         tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
         originalTags: Array.isArray(row.originalTags) ? row.originalTags : (row.originalTags ? [row.originalTags] : []),
         userTags: Array.isArray(row.userTags) ? row.userTags : (row.userTags ? [row.userTags] : []),
@@ -254,6 +259,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
           e.external_link as "externalLink",
           COALESCE(ce.custom_artist, e.artist) as artist,
+          e.circle_id as "circleId",
+          c.name as circle,
           COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[]) as tags,
           e.tags as "originalTags",
           ce.user_tags as "userTags",
@@ -264,6 +271,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        LEFT JOIN circles c ON e.circle_id = c.id
         WHERE EXISTS (
           SELECT 1 FROM unnest(COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[])) AS tag
           WHERE LOWER(tag) = ${tagName}
@@ -277,6 +285,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imageUrl: row.imageUrl || '',
         externalLink: row.externalLink || '',
         artist: row.artist || 'Unknown Artist',
+        circleId: row.circleId ?? null,
+        circle: row.circle || null,
         tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
         originalTags: Array.isArray(row.originalTags) ? row.originalTags : (row.originalTags ? [row.originalTags] : []),
         userTags: Array.isArray(row.userTags) ? row.userTags : (row.userTags ? [row.userTags] : []),
@@ -306,6 +316,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
           e.external_link as "externalLink",
           COALESCE(ce.custom_artist, e.artist) as artist,
+          e.circle_id as "circleId",
+          c.name as circle,
           COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[]) as tags,
           e.tags as "originalTags",
           ce.user_tags as "userTags",
@@ -316,6 +328,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        LEFT JOIN circles c ON e.circle_id = c.id
         WHERE LOWER(COALESCE(ce.custom_artist, e.artist)) = LOWER(${artistName})
         ORDER BY e.id
       `);
@@ -326,6 +339,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imageUrl: row.imageUrl || '',
         externalLink: row.externalLink || '',
         artist: row.artist || 'Unknown Artist',
+        circleId: row.circleId ?? null,
+        circle: row.circle || null,
         tags: Array.isArray(row.tags) ? row.tags : (row.tags ? [row.tags] : []),
         originalTags: Array.isArray(row.originalTags) ? row.originalTags : (row.originalTags ? [row.originalTags] : []),
         userTags: Array.isArray(row.userTags) ? row.userTags : (row.userTags ? [row.userTags] : []),
@@ -577,10 +592,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         imageUrl: z.string().optional(),
         externalLink: z.string().optional(),
         artist: z.string().min(1, "Artist is required"),
+        circleId: z.number().int().optional(),
         tags: z.array(z.string()).optional(),
         userTags: z.array(z.string()).optional(),
         keywords: z.array(z.string()).optional(), // DEPRECATED: backwards compatibility
-        type: z.enum(['comic', 'image', 'sequence']).default('image'),
+        type: z.enum(['comic', 'image', 'sequence', 'story']).default('image'),
         sequenceImages: z.array(z.string()).optional(),
       });
 

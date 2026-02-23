@@ -8,12 +8,19 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
+export const circles = pgTable("circles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const entries = pgTable("entries", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   imageUrl: text("image_url").notNull(),
   externalLink: text("external_link"),
   artist: text("artist").notNull(),
+  circleId: integer("circle_id").references(() => circles.id),
   tags: text("tags").array(),
   type: text("type").notNull(), // 'comic' | 'image' | 'sequence' | 'story'
   sequenceImages: text("sequence_images").array(),
@@ -69,6 +76,7 @@ export const insertEntrySchema = createInsertSchema(entries).pick({
   imageUrl: true,
   externalLink: true,
   artist: true,
+  circleId: true,
   tags: true,
   type: true,
   sequenceImages: true,
@@ -101,6 +109,7 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type InsertEntry = z.infer<typeof insertEntrySchema>;
 export type DbEntry = typeof entries.$inferSelect;
+export type Circle = typeof circles.$inferSelect;
 export type InsertTitle = z.infer<typeof insertTitleSchema>;
 export type Title = typeof titles.$inferSelect;
 export type InsertCustomEntry = z.infer<typeof insertCustomEntrySchema>;
@@ -117,6 +126,8 @@ export interface Entry {
   imageUrl: string;
   externalLink: string;
   artist: string;
+  circleId?: number | null;
+  circle?: string | null;
   tags: string[]; // Combined tags (originalTags + userTags)
   originalTags?: string[]; // Tags from base entry
   userTags?: string[]; // User-added tags

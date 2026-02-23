@@ -119,7 +119,7 @@ export function handleLogin(req: Request, res: Response) {
   // Set secure HTTP-only cookie
   res.cookie('auth_token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // No TLS termination on this server; httpOnly + sameSite still protect the cookie
     sameSite: 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     path: '/'

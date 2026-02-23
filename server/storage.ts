@@ -14,7 +14,7 @@ export interface IStorage {
   setCustomEntry(data: InsertCustomEntry): Promise<CustomEntry>;
   updateCustomEntry(entryId: number, updates: Partial<{ customImageUrl: string; customArtist: string; customTags: string[]; keywords: string[]; rating: number }>): Promise<CustomEntry | undefined>;
   getAllEntries(): Promise<any[]>;
-  createEntry(entryData: { title: string; imageUrl?: string; externalLink?: string; artist: string; tags?: string[]; keywords?: string[]; type: 'comic' | 'image' | 'sequence'; sequenceImages?: string[] }): Promise<any>;
+  createEntry(entryData: { title: string; imageUrl?: string; externalLink?: string; artist: string; circleId?: number | null; tags?: string[]; keywords?: string[]; type: 'comic' | 'image' | 'sequence' | 'story'; sequenceImages?: string[] }): Promise<any>;
   deleteEntry(entryId: number): Promise<void>;
   getArtistLinks(artistName: string): Promise<ArtistLink[]>;
   addArtistLink(data: InsertArtistLink): Promise<ArtistLink>;

@@ -4,7 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 
 export default function Logo() {
   const { toggleTheme, getThemeIcon } = useTheme();
-  const { logout, deviceInfo } = useAuth();
+  const { logout, isAuthenticated } = useAuth();
 
   const handleLogout = async () => {
     await logout();
@@ -20,7 +20,7 @@ export default function Logo() {
         <span className="text-white text-xs">{getThemeIcon()}</span>
       </button>
       <span className="font-semibold text-slate-800 text-sm">Marie's Vault</span>
-      {deviceInfo && (
+      {isAuthenticated && (
         <button
           onClick={handleLogout}
           className="w-6 h-6 bg-red-600 rounded flex items-center justify-center hover:bg-red-500 transition-colors cursor-pointer ml-2"

@@ -3,7 +3,6 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { logDeviceInfo } from "./auth-middleware";
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -16,9 +15,6 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
   immutable: true,
   etag: true,
 }));
-
-// Add device info logging in development
-app.use(logDeviceInfo);
 
 app.use((req, res, next) => {
   const start = Date.now();

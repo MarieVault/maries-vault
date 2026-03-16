@@ -8,7 +8,7 @@ import path from "path";
 import fs from "fs";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
-import { handleLogin, handleLogout, checkAuthStatus, requireAuth } from "./auth-middleware";
+import { handleLogin, handleLogout, handleRegister, handleMe, requireAuth } from "./auth";
 
 
 // Error handling middleware
@@ -47,7 +47,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes (unprotected)
   app.post("/api/auth/login", handleLogin);
   app.post("/api/auth/logout", handleLogout);
-  app.get("/api/auth/status", checkAuthStatus);
+  app.post("/api/auth/register", handleRegister);
+  app.get("/api/auth/me", handleMe);
 
   // Apply authentication middleware to all other API routes
   app.use("/api", requireAuth);

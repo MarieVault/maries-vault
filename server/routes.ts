@@ -1019,6 +1019,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }));
 
+  // Image Gallery — browse AI-generated images on the server
+  app.get("/api/gallery", handleAsyncErrors(async (req, res) => {
+    const GENERATED_DIR = '/root/.openclaw/workspace/media/generated';
+    const PORTRAITS_DIR = '/root/.openclaw/workspace/attachments/characters';
+    const PORTRAITS_URL_BASE = 'https://andy.mariesvault.com/portraits';
+
+    const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
+
+    function walkDir(dir: string): string[] {
+      if (!fs.existsSync(dir)) return [];
+      const results: string[] = [];
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          results.push(...walkDir(fullPath));
+        } else if (IMAGE_EXTS.has(path.extname(entry.name).toLowerCase())) {
+          results.push(fullPath);
+        }
+      }
+      return results;
+    }
+
+    const files = walkDir(GENERATED_DIR);
+
+    const items = files.map(filePath => {
+      const filename = path.basename(filePath);
+      const destPath = path.join(PORTRAITS_DIR, filename);
+
+      // Copy to portraits dir if not already there
+      if (!fs.existsSync(destPath)) {
+        try {
+          fs.mkdirSync(PORTRAITS_DIR, { recursive: true });
+          fs.copyFileSync(filePath, destPath);
+        } catch (e) {
+          // non-fatal
+        }
+      }
+
+      const stat = fs.statSync(filePath);
+      return {
+        filename,
+        path: filePath,
+        url: `${PORTRAITS_URL_BASE}/${filename}`,
+        createdAt: stat.mtime.toISOString(),
+      };
+    });
+
+    // Sort newest first
+    items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    res.json(items);
+  }));
+
   const httpServer = createServer(app);
   return httpServer;
 }

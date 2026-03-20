@@ -19,6 +19,7 @@ import ShareHandler from "@/pages/ShareHandler";
 import InstallPWA from "@/pages/InstallPWA";
 import TwitterImport from "@/pages/TwitterImport";
 import ImageViewer from "@/pages/ImageViewer";
+import Gallery from "@/pages/Gallery";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/artist-rankings" component={ArtistRankings} />
       <Route path="/share-handler" component={ShareHandler} />
       <Route path="/install-pwa" component={InstallPWA} />
+      <Route path="/gallery" component={Gallery} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -6,7 +6,7 @@ import Splash from "../components/Splash";
 import EntryCard from "../components/EntryCard";
 import Logo from "../components/Logo";
 import { Button } from "@/components/ui/button";
-import { Dice1, Users, Lock, Grid3X3, Square, Plus, Heart, Tag, Trophy } from "lucide-react";
+import { Dice1, Users, Lock, Grid3X3, Square, Plus, Heart, Tag, Trophy, Images } from "lucide-react";
 import type { Entry } from "@shared/schema";
 
 export default function Home() {
@@ -93,6 +93,17 @@ export default function Home() {
           <Logo />
           
           <div className="flex items-center space-x-2">
+            <Link href="/gallery">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-10 h-10 rounded-full p-0 hover:bg-muted transition-all duration-200"
+                aria-label="AI Image Gallery"
+              >
+                <Images size={16} className="text-purple-500" />
+              </Button>
+            </Link>
+
             <Link href="/create">
               <Button
                 variant="ghost"
@@ -251,6 +262,21 @@ export default function Home() {
                   className="w-full"
                 >
                   Artist Rankings
+                </Button>
+              </Link>
+            </div>
+
+            <div className="p-4 bg-purple-50 rounded-xl shadow-lg border border-purple-100">
+              <h3 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+                <Images className="text-purple-500" size={16} />
+                <span>AI Image Gallery</span>
+              </h3>
+              <p className="text-gray-600 text-sm mb-3">Browse AI-generated images and save them to your vault</p>
+              <Link href="/gallery">
+                <Button
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                  Open Gallery
                 </Button>
               </Link>
             </div>

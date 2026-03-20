@@ -74,11 +74,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           e.type,
           e.sequence_images as "sequenceImages",
           ce.keywords,
-          ce.rating
+          ce.rating,
+          COALESCE(e.archived, false) as archived
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
         LEFT JOIN circles c ON e.circle_id = c.id
+        WHERE COALESCE(e.archived, false) = false
         ORDER BY e.id
       `;
       
@@ -100,6 +102,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
         keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
         rating: row.rating || null,
+        archived: row.archived || false,
       }));
       
       res.json(dbEntries);
@@ -325,7 +328,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           e.type,
           e.sequence_images as "sequenceImages",
           ce.keywords,
-          ce.rating
+          ce.rating,
+          COALESCE(e.archived, false) as archived
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
@@ -349,6 +353,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
         keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
         rating: row.rating || null,
+        archived: row.archived || false,
       }));
 
       res.json(dbEntries);
@@ -357,6 +362,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Failed to load artist entries' });
     }
   });
+
+  // Archive / unarchive an entry
+  app.patch("/api/entries/:id/archive", parseIntParam('id'), handleAsyncErrors(async (req, res) => {
+    const id = (req as any).parsedParams.id;
+    const { archived } = req.body;
+    if (typeof archived !== 'boolean') {
+      return res.status(400).json({ message: 'archived must be a boolean' });
+    }
+    const { db } = await import('./db');
+    await db.execute(sql`UPDATE entries SET archived = ${archived} WHERE id = ${id}`);
+    res.json({ id, archived });
+  }));
 
   // Get individual entry by ID
   app.get("/api/entries/:id", parseIntParam('id'), handleAsyncErrors(async (req, res) => {

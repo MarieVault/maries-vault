@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, Search, Palette, Image, BookOpen, Tag, Plus, ExternalLink, X } from "lucide-react";
+import { ArrowLeft, Search, Palette, Image, BookOpen, Tag, Plus, ExternalLink, X, Archive } from "lucide-react";
 import EntryCard from "@/components/EntryCard";
 import { apiRequest } from "@/lib/queryClient";
 import type { Entry, ArtistLink } from "@shared/schema";
@@ -18,6 +18,7 @@ export default function ArtistPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("random");
+  const [archiveFilter, setArchiveFilter] = useState<"active" | "archived" | "all">("active");
   const [isAddLinkDialogOpen, setIsAddLinkDialogOpen] = useState(false);
   const [newLinkPlatform, setNewLinkPlatform] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
@@ -130,6 +131,13 @@ export default function ArtistPage() {
       );
     }
 
+    // Archive filter
+    if (archiveFilter === "active") {
+      filtered = filtered.filter(entry => !entry.archived);
+    } else if (archiveFilter === "archived") {
+      filtered = filtered.filter(entry => entry.archived);
+    }
+
     // Sort
     if (sortBy === "random") {
       // Use stable shuffled order
@@ -146,7 +154,7 @@ export default function ArtistPage() {
     }
 
     return filtered;
-  }, [artistEntries, searchTerm, typeFilter, tagFilter, sortBy]);
+  }, [artistEntries, searchTerm, typeFilter, tagFilter, sortBy, archiveFilter]);
 
   const displayArtistName = artistName ? decodeURIComponent(artistName) : "";
 
@@ -460,6 +468,23 @@ export default function ArtistPage() {
                 <SelectItem value="type">Type</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Archive filter toggle */}
+            <div className="flex rounded-md border border-input overflow-hidden text-xs">
+              {(["active", "all", "archived"] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setArchiveFilter(v)}
+                  className={`px-2 py-1.5 capitalize transition-colors ${
+                    archiveFilter === v
+                      ? "bg-amber-500 text-white"
+                      : "bg-background text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {v === "archived" ? <><Archive size={11} className="inline mr-0.5" />archived</> : v}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -467,6 +492,12 @@ export default function ArtistPage() {
         <div className="mb-4">
           <p className="text-sm text-gray-600">
             Showing {filteredEntries.length} of {artistEntries.length} entries
+            {archiveFilter === "archived" && <span className="ml-2 text-amber-600 font-medium">(archived only)</span>}
+            {archiveFilter === "active" && artistEntries.filter(e => e.archived).length > 0 && (
+              <span className="ml-2 text-muted-foreground">
+                · {artistEntries.filter(e => e.archived).length} archived hidden
+              </span>
+            )}
           </p>
         </div>
 

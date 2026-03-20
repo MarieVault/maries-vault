@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Edit, ExternalLink, Palette, Camera, User, Users, BookOpen, Image, Trash2, Star, X, ImageIcon, Images, Film } from "lucide-react";
+import { Edit, ExternalLink, Palette, Camera, User, Users, BookOpen, Image, Trash2, Star, X, ImageIcon, Images, Film, Archive, ArchiveRestore } from "lucide-react";
 import { apiRequest, queryClient } from "../lib/queryClient";
 import type { Entry } from "@shared/schema";
 
@@ -412,6 +412,25 @@ export default function EntryCard({ entry }: EntryCardProps) {
       });
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const [isArchiving, setIsArchiving] = useState(false);
+
+  const handleArchive = async (archive: boolean) => {
+    setIsArchiving(true);
+    try {
+      await apiRequest("PATCH", `/api/entries/${entry.id}/archive`, { archived: archive });
+      queryClient.invalidateQueries({ queryKey: ["/api/entries"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/artists/${encodeURIComponent(entry.artist)}/entries`] });
+      toast({
+        title: archive ? "Archived" : "Unarchived",
+        description: archive ? "Entry moved to archive." : "Entry restored to vault.",
+      });
+    } catch (error) {
+      toast({ variant: "destructive", title: "Error", description: "Couldn't update archive status." });
+    } finally {
+      setIsArchiving(false);
     }
   };
 
@@ -968,8 +987,22 @@ export default function EntryCard({ entry }: EntryCardProps) {
           </div>
         )}
 
-        {/* Delete Button */}
-        <div className="pt-2 border-t border-gray-200">
+        {/* Archive + Delete Buttons */}
+        <div className="pt-2 border-t border-gray-200 flex gap-2 flex-wrap">
+          <Button
+            onClick={() => handleArchive(!entry.archived)}
+            variant="outline"
+            size="sm"
+            disabled={isArchiving}
+            className={entry.archived
+              ? "text-green-600 border-green-300 hover:bg-green-50"
+              : "text-amber-600 border-amber-300 hover:bg-amber-50"}
+          >
+            {entry.archived
+              ? <><ArchiveRestore size={14} className="mr-1" />{isArchiving ? "Restoring..." : "Unarchive"}</>
+              : <><Archive size={14} className="mr-1" />{isArchiving ? "Archiving..." : "Archive"}</>
+            }
+          </Button>
           <Button 
             onClick={handleDelete}
             variant="outline"

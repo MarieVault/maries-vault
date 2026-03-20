@@ -26,6 +26,7 @@ export const entries = pgTable("entries", {
   sequenceImages: text("sequence_images").array(),
   content: text("content"), // For storing story text content
   userId: integer("user_id").references(() => users.id).notNull(),
+  archived: boolean("archived").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -136,4 +137,5 @@ export interface Entry {
   sequenceImages?: string[];
   content?: string;
   rating?: number | null;
+  archived?: boolean;
 }

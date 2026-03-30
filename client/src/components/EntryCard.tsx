@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useEntriesContext } from "../context/EntriesContext";
+import { useAuth } from "../context/AuthContext";
 import { setTitle } from "../lib/titleStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Edit, ExternalLink, Palette, Camera, User, Users, BookOpen, Image, Trash2, Star, X, ImageIcon, Images, Film, Archive, ArchiveRestore } from "lucide-react";
 import { apiRequest, queryClient } from "../lib/queryClient";
+import SaveButton from "./SaveButton";
+import { useBlur } from "../context/BlurContext";
 import type { Entry } from "@shared/schema";
 
 interface EntryCardProps {
@@ -17,7 +20,13 @@ interface EntryCardProps {
 
 export default function EntryCard({ entry }: EntryCardProps) {
   const { updateEntryTitle } = useEntriesContext();
+  const { isAuthenticated, user } = useAuth();
   const { toast } = useToast();
+
+  // Ownership & role checks
+  const isOwner = isAuthenticated && user?.id === (entry as any).userId;
+  const isAdmin = isAuthenticated && user?.role === 'admin';
+  const { blurEnabled } = useBlur();
   const [isEditing, setIsEditing] = useState(false);
   const [isEditingArtist, setIsEditingArtist] = useState(false);
   const [isEditingTags, setIsEditingTags] = useState(false);
@@ -435,28 +444,25 @@ export default function EntryCard({ entry }: EntryCardProps) {
   };
 
   const handleRating = async (newRating: number) => {
+    if (!isAuthenticated) return;
     try {
-      await apiRequest("POST", "/api/custom-entries", {
-        entryId: entry.id,
-        rating: newRating,
-      });
-
-      setRating(newRating);
-
-      // Invalidate entries cache to refresh data immediately
-      queryClient.invalidateQueries({ queryKey: ["/api/entries"] });
-
-      toast({
-        title: "Success",
-        description: `Rated ${newRating} star${newRating !== 1 ? 's' : ''}!`,
-      });
-    } catch (error) {
-      console.error('Error saving rating:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Couldn't save rating. Please try again.",
-      });
+      if (newRating === rating) {
+        // clicking same star = clear rating
+        await fetch(`/api/ratings/${entry.id}`, { method: 'DELETE', credentials: 'include' });
+        setRating(null);
+        toast({ title: "Rating cleared" });
+      } else {
+        await fetch(`/api/ratings/${entry.id}`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rating: newRating }),
+        });
+        setRating(newRating);
+        toast({ title: `Rated ${newRating} star${newRating !== 1 ? 's' : ''}!` });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Couldn't save rating" });
     }
   };
 
@@ -482,7 +488,13 @@ export default function EntryCard({ entry }: EntryCardProps) {
           if (customData.customArtist) setCustomArtist(customData.customArtist);
           if (customData.customTags) setCustomTags(customData.customTags);
           if (customData.userTags) setUserTags(customData.userTags);
-          if (customData.rating) setRating(customData.rating);
+        }
+
+        // Load personal rating (only if logged in)
+        const ratingRes = await fetch(`/api/ratings/${entry.id}`, { credentials: 'include' });
+        if (ratingRes.ok) {
+          const ratingData = await ratingRes.json();
+          setRating(ratingData.rating ?? null);
         }
       } catch (error) {
         console.error('Error loading custom data:', error);
@@ -521,7 +533,7 @@ export default function EntryCard({ entry }: EntryCardProps) {
           <video
             src={displayImage}
             className={`w-full h-56 object-cover transition-all duration-300 ${
-              !isImageRevealed ? 'blur-md grayscale' : ''
+              blurEnabled && !isImageRevealed ? 'blur-md grayscale' : ''
             }`}
             autoPlay
             loop
@@ -535,7 +547,7 @@ export default function EntryCard({ entry }: EntryCardProps) {
             src={displayImage}
             alt={displayTitle}
             className={`w-full h-56 object-cover transition-all duration-300 ${
-              !isImageRevealed ? 'blur-md grayscale' : ''
+              blurEnabled && !isImageRevealed ? 'blur-md grayscale' : ''
             }`}
             onLoadStart={handleImageStart}
             onLoad={handleImageLoad}
@@ -543,8 +555,8 @@ export default function EntryCard({ entry }: EntryCardProps) {
           />
         )}
 
-        {/* Click-to-reveal overlay */}
-        {!isImageRevealed && (
+        {/* Click-to-reveal overlay — only when blur is globally enabled */}
+        {blurEnabled && !isImageRevealed && (
           <div 
             onClick={() => setIsImageRevealed(true)}
             className="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center cursor-pointer hover:bg-opacity-10 transition-all duration-200"
@@ -555,8 +567,8 @@ export default function EntryCard({ entry }: EntryCardProps) {
           </div>
         )}
 
-        {/* Re-blur button (appears on hover when image is revealed) */}
-        {isImageRevealed && (
+        {/* Re-blur button — only when blur is globally enabled */}
+        {blurEnabled && isImageRevealed && (
           <div 
             onClick={() => setIsImageRevealed(false)}
             className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
@@ -577,25 +589,27 @@ export default function EntryCard({ entry }: EntryCardProps) {
           </div>
         )}
 
-        {/* Image upload button */}
-        <div className="absolute top-2 right-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            className="hidden"
-          />
-          <Button
-            onClick={() => fileInputRef.current?.click()}
-            size="sm"
-            variant="secondary"
-            className="bg-white/80 backdrop-blur hover:bg-white/90 text-gray-700"
-            disabled={isUploadingImage}
-          >
-            <Camera size={14} />
-          </Button>
-        </div>
+        {/* Image upload button — authenticated only */}
+        {isOwner && (
+          <div className="absolute top-2 right-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              size="sm"
+              variant="secondary"
+              className="bg-white/80 backdrop-blur hover:bg-white/90 text-gray-700"
+              disabled={isUploadingImage}
+            >
+              <Camera size={14} />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Card Content */}
@@ -617,28 +631,33 @@ export default function EntryCard({ entry }: EntryCardProps) {
                       {displayTitle}
                     </h2>
                   )}
-                  <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
-                    isComic
-                      ? 'bg-orange-100 text-orange-700'
-                      : isSequence
-                        ? 'bg-purple-100 text-purple-700'
-                        : isStory
-                          ? 'bg-green-100 text-green-700'
-                          : isVideo
-                            ? 'bg-red-100 text-red-700'
-                            : 'bg-indigo-100 text-indigo-700'
-                  }`}>
-                    <TypeIcon size={12} />
-                    <span>{isComic ? 'Comic' : isSequence ? 'Sequence' : isStory ? 'Story' : isVideo ? 'Video' : 'Image'}</span>
+                  <div className="flex items-center gap-1">
+                    <SaveButton entryId={entry.id} showLabel />
+                    <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
+                      isComic
+                        ? 'bg-orange-100 text-orange-700'
+                        : isSequence
+                          ? 'bg-purple-100 text-purple-700'
+                          : isStory
+                            ? 'bg-green-100 text-green-700'
+                            : isVideo
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-indigo-100 text-indigo-700'
+                    }`}>
+                      <TypeIcon size={12} />
+                      <span>{isComic ? 'Comic' : isSequence ? 'Sequence' : isStory ? 'Story' : isVideo ? 'Video' : 'Image'}</span>
+                    </div>
                   </div>
                 </div>
-                <button 
-                  onClick={handleEditStart}
-                  className="text-indigo-600 text-sm hover:text-indigo-700 transition-colors duration-200 flex items-center space-x-1 focus-visible:focus"
-                >
-                  <Edit size={12} />
-                  <span>Edit title</span>
-                </button>
+                {isOwner && (
+                  <button 
+                    onClick={handleEditStart}
+                    className="text-indigo-600 text-sm hover:text-indigo-700 transition-colors duration-200 flex items-center space-x-1 focus-visible:focus"
+                  >
+                    <Edit size={12} />
+                    <span>Edit title</span>
+                  </button>
+                )}
               </div>
             ) : (
               <form onSubmit={handleSave} className="space-y-2">
@@ -691,7 +710,7 @@ export default function EntryCard({ entry }: EntryCardProps) {
                 ) : (
                   <span>Unknown Artist</span>
                 )}
-                {(!entry.artist || entry.artist === "Unknown Artist") && (
+                {isOwner && (!entry.artist || entry.artist === "Unknown Artist") && (
                   <button 
                     onClick={() => setIsEditingArtist(true)}
                     className="text-indigo-600 hover:text-indigo-700 transition-colors duration-200 flex items-center space-x-1 focus-visible:focus"
@@ -762,7 +781,7 @@ export default function EntryCard({ entry }: EntryCardProps) {
               </div>
             )}
           </div>
-          {displayArtist && displayArtist !== "Unknown Artist" && !isEditingArtist && (
+          {isOwner && displayArtist && displayArtist !== "Unknown Artist" && !isEditingArtist && (
             <button 
               onClick={() => {
                 setArtistDraft(displayArtist);
@@ -789,20 +808,22 @@ export default function EntryCard({ entry }: EntryCardProps) {
                   </span>
                 </Link>
               ))}
-              <button
-                onClick={() => {
-                  // When editing, combine custom_tags (or original tags) with user_tags so all displayed tags are editable
-                  const baseTags = customTags || entry.originalTags || [];
-                  const allEditableTags = [...baseTags, ...(userTags || [])];
-                  setCurrentTags(allEditableTags);
-                  setTagsDraft("");
-                  setIsEditingTags(true);
-                }}
-                className="text-indigo-600 hover:text-indigo-700 transition-colors duration-200 flex items-center space-x-1 text-xs focus-visible:focus"
-              >
-                <Edit size={10} />
-                <span>Edit tags</span>
-              </button>
+              {isOwner && (
+                <button
+                  onClick={() => {
+                    // When editing, combine custom_tags (or original tags) with user_tags so all displayed tags are editable
+                    const baseTags = customTags || entry.originalTags || [];
+                    const allEditableTags = [...baseTags, ...(userTags || [])];
+                    setCurrentTags(allEditableTags);
+                    setTagsDraft("");
+                    setIsEditingTags(true);
+                  }}
+                  className="text-indigo-600 hover:text-indigo-700 transition-colors duration-200 flex items-center space-x-1 text-xs focus-visible:focus"
+                >
+                  <Edit size={10} />
+                  <span>Edit tags</span>
+                </button>
+              )}
             </div>
           ) : (
             <div className="w-full space-y-3">
@@ -917,34 +938,35 @@ export default function EntryCard({ entry }: EntryCardProps) {
         </div>
 
 
-        {/* Star Rating */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-1">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                onClick={() => handleRating(star)}
-                onMouseEnter={() => setHoverRating(star)}
-                onMouseLeave={() => setHoverRating(null)}
-                className="p-1 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
-              >
-                <Star
-                  size={16}
-                  className={`transition-colors duration-200 ${
-                    star <= (hoverRating || rating || 0)
-                      ? 'text-yellow-400 fill-yellow-400'
-                      : 'text-gray-300 hover:text-yellow-300'
-                  }`}
-                />
-              </button>
-            ))}
-            {rating && (
-              <span className="text-xs text-gray-500 ml-2">
-{rating}/5
-              </span>
-            )}
+        {/* Star Rating — logged-in users only */}
+        {isAuthenticated && (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-1">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => handleRating(star)}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(null)}
+                  className="p-1 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 rounded"
+                  title={star === rating ? "Click to clear rating" : `Rate ${star} star${star !== 1 ? 's' : ''}`}
+                >
+                  <Star
+                    size={16}
+                    className={`transition-colors duration-200 ${
+                      star <= (hoverRating || rating || 0)
+                        ? 'text-yellow-400 fill-yellow-400'
+                        : 'text-gray-300 hover:text-yellow-300'
+                    }`}
+                  />
+                </button>
+              ))}
+              {rating && (
+                <span className="text-xs text-gray-500 ml-2">{rating}/5</span>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
 
 
@@ -987,33 +1009,37 @@ export default function EntryCard({ entry }: EntryCardProps) {
           </div>
         )}
 
-        {/* Archive + Delete Buttons */}
-        <div className="pt-2 border-t border-gray-200 flex gap-2 flex-wrap">
-          <Button
-            onClick={() => handleArchive(!entry.archived)}
-            variant="outline"
-            size="sm"
-            disabled={isArchiving}
-            className={entry.archived
-              ? "text-green-600 border-green-300 hover:bg-green-50"
-              : "text-amber-600 border-amber-300 hover:bg-amber-50"}
-          >
-            {entry.archived
-              ? <><ArchiveRestore size={14} className="mr-1" />{isArchiving ? "Restoring..." : "Unarchive"}</>
-              : <><Archive size={14} className="mr-1" />{isArchiving ? "Archiving..." : "Archive"}</>
-            }
-          </Button>
-          <Button 
-            onClick={handleDelete}
-            variant="outline"
-            size="sm"
-            disabled={isDeleting}
-            className="text-red-600 border-red-300 hover:bg-red-50 hover:border-red-400 transition-colors duration-200"
-          >
-            <Trash2 size={14} className="mr-1" />
-            {isDeleting ? "Deleting..." : "Delete Entry"}
-          </Button>
-        </div>
+        {/* Archive (any logged-in user) + Delete (admin only) */}
+        {isAuthenticated && (
+          <div className="pt-2 border-t border-gray-200 flex gap-2 flex-wrap">
+            <Button
+              onClick={() => handleArchive(!entry.archived)}
+              variant="outline"
+              size="sm"
+              disabled={isArchiving}
+              className={entry.archived
+                ? "text-green-600 border-green-300 hover:bg-green-50"
+                : "text-amber-600 border-amber-300 hover:bg-amber-50"}
+            >
+              {entry.archived
+                ? <><ArchiveRestore size={14} className="mr-1" />{isArchiving ? "Restoring..." : "Unarchive"}</>
+                : <><Archive size={14} className="mr-1" />{isArchiving ? "Archiving..." : "Archive"}</>
+              }
+            </Button>
+            {isAdmin && (
+              <Button
+                onClick={handleDelete}
+                variant="outline"
+                size="sm"
+                disabled={isDeleting}
+                className="text-red-600 border-red-300 hover:bg-red-50 hover:border-red-400 transition-colors duration-200"
+              >
+                <Trash2 size={14} className="mr-1" />
+                {isDeleting ? "Deleting..." : "Delete Entry"}
+              </Button>
+            )}
+          </div>
+        )}
 
       </div>
     </article>

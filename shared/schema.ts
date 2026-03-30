@@ -62,6 +62,28 @@ export const tagEmojis = pgTable("tag_emojis", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const userRatings = pgTable("user_ratings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  entryId: integer("entry_id").references(() => entries.id, { onDelete: "cascade" }).notNull(),
+  rating: integer("rating").notNull(),
+  ratedAt: timestamp("rated_at").defaultNow(),
+});
+
+export const userArchives = pgTable("user_archives", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  entryId: integer("entry_id").references(() => entries.id, { onDelete: "cascade" }).notNull(),
+  archivedAt: timestamp("archived_at").defaultNow(),
+});
+
+export const userCollections = pgTable("user_collections", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  entryId: integer("entry_id").references(() => entries.id, { onDelete: "cascade" }).notNull(),
+  addedAt: timestamp("added_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,

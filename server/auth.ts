@@ -129,3 +129,16 @@ export async function requireAdmin(req: Request & { user?: any }, res: Response,
     next();
   });
 }
+
+// Sets req.user if logged in, but never blocks the request
+export async function optionalAuth(req: Request & { user?: any }, res: Response, next: NextFunction) {
+  const sessionId = req.cookies?.[COOKIE_NAME];
+  if (sessionId) {
+    const user = await validateSession(sessionId);
+    if (user) req.user = user;
+  }
+  next();
+}
+
+// Export validateSession for inline use
+export { validateSession };

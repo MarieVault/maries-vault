@@ -18,7 +18,7 @@ export default function ArtistPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<string>("random");
-  const [archiveFilter, setArchiveFilter] = useState<"active" | "archived" | "all">("active");
+  const [archiveFilter, setArchiveFilter] = useState<"active" | "archived">("active");
   const [isAddLinkDialogOpen, setIsAddLinkDialogOpen] = useState(false);
   const [newLinkPlatform, setNewLinkPlatform] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
@@ -471,7 +471,7 @@ export default function ArtistPage() {
 
             {/* Archive filter toggle */}
             <div className="flex rounded-md border border-input overflow-hidden text-xs">
-              {(["active", "all", "archived"] as const).map(v => (
+              {(["active", "archived"] as const).map(v => (
                 <button
                   key={v}
                   onClick={() => setArchiveFilter(v)}
@@ -481,7 +481,7 @@ export default function ArtistPage() {
                       : "bg-background text-muted-foreground hover:bg-muted"
                   }`}
                 >
-                  {v === "archived" ? <><Archive size={11} className="inline mr-0.5" />archived</> : v}
+                  {v === "archived" ? "archived" : v}
                 </button>
               ))}
             </div>

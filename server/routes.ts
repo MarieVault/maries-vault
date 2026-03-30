@@ -1,14 +1,14 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertTitleSchema, insertCustomEntrySchema, insertTagEmojiSchema, entries, titles, customEntries, tagEmojis } from "@shared/schema";
+import { insertTitleSchema, insertCustomEntrySchema, insertTagEmojiSchema, entries, titles, customEntries, tagEmojis, userCollections, userArchives, userRatings } from "@shared/schema";
 import { z } from "zod";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { db } from "./db";
-import { eq, sql } from "drizzle-orm";
-import { handleLogin, handleLogout, handleRegister, handleMe, requireAuth } from "./auth";
+import { eq, sql, and } from "drizzle-orm";
+import { handleLogin, handleLogout, handleRegister, handleMe, requireAuth, optionalAuth } from "./auth";
 
 
 // Error handling middleware
@@ -50,8 +50,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/register", handleRegister);
   app.get("/api/auth/me", handleMe);
 
-  // Apply authentication middleware to all other API routes
-  app.use("/api", requireAuth);
+  // Public read-only routes (no auth required)
+  // Write/upload routes are still protected below via requireAuth inline
+
+  // ── User Collections (bookmarks) ─────────────────────────────────────────
+
+  // Add entry to collection
+  app.post("/api/collections/:entryId", requireAuth, parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    try {
+      await db.insert(userCollections).values({ userId, entryId }).onConflictDoNothing();
+      res.json({ saved: true });
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  }));
+
+  // Remove entry from collection
+  app.delete("/api/collections/:entryId", requireAuth, parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    await db.delete(userCollections).where(and(eq(userCollections.userId, userId), eq(userCollections.entryId, entryId)));
+    res.json({ saved: false });
+  }));
+
+  // Get user's collection
+  app.get("/api/collections", requireAuth, handleAsyncErrors(async (req: any, res) => {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    const { db: dbI } = await import('./db');
+    const saved = await dbI.execute(sql`
+      SELECT e.*, uc.added_at as saved_at
+      FROM user_collections uc
+      JOIN entries e ON e.id = uc.entry_id
+      WHERE uc.user_id = ${userId}
+      ORDER BY uc.added_at DESC
+    `);
+    res.json(saved.rows);
+  }));
+
+  // ── User Ratings (personal per-user) ─────────────────────────────────────
+
+  // Set or update rating
+  app.post("/api/ratings/:entryId", requireAuth, parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const userId = req.user?.id;
+    const { rating } = req.body;
+    if (!rating || rating < 1 || rating > 5) return res.status(400).json({ message: 'Rating must be 1-5' });
+    await db.insert(userRatings).values({ userId, entryId, rating })
+      .onConflictDoUpdate({ target: [userRatings.userId, userRatings.entryId], set: { rating } });
+    res.json({ rating });
+  }));
+
+  // Clear rating
+  app.delete("/api/ratings/:entryId", requireAuth, parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const userId = req.user?.id;
+    await db.delete(userRatings).where(and(eq(userRatings.userId, userId), eq(userRatings.entryId, entryId)));
+    res.json({ rating: null });
+  }));
+
+  // Get user's rating for an entry
+  app.get("/api/ratings/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const token = req.cookies?.auth_session;
+    if (!token) return res.json({ rating: null });
+    try {
+      const { validateSession } = await import('./auth');
+      const user = await validateSession(token);
+      if (!user) return res.json({ rating: null });
+      const row = await db.select().from(userRatings)
+        .where(and(eq(userRatings.userId, user.id), eq(userRatings.entryId, entryId)))
+        .limit(1);
+      res.json({ rating: row[0]?.rating ?? null });
+    } catch {
+      res.json({ rating: null });
+    }
+  }));
+
+  // ── User Archives (personal hide) ────────────────────────────────────────
+
+  // Toggle personal archive on an entry
+  app.post("/api/archives/:entryId", requireAuth, parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    // Check if already archived
+    const existing = await db.select().from(userArchives)
+      .where(and(eq(userArchives.userId, userId), eq(userArchives.entryId, entryId)))
+      .limit(1);
+    if (existing.length > 0) {
+      await db.delete(userArchives).where(and(eq(userArchives.userId, userId), eq(userArchives.entryId, entryId)));
+      res.json({ archived: false });
+    } else {
+      await db.insert(userArchives).values({ userId, entryId });
+      res.json({ archived: true });
+    }
+  }));
+
+  // Check archive status
+  app.get("/api/archives/check/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const token = req.cookies?.auth_session;
+    if (!token) return res.json({ archived: false });
+    try {
+      const { validateSession } = await import('./auth');
+      const user = await validateSession(token);
+      if (!user) return res.json({ archived: false });
+      const row = await db.select().from(userArchives)
+        .where(and(eq(userArchives.userId, user.id), eq(userArchives.entryId, entryId)))
+        .limit(1);
+      res.json({ archived: row.length > 0 });
+    } catch {
+      res.json({ archived: false });
+    }
+  }));
+
+  // Check if current user has saved an entry (public endpoint, returns false if not logged in)
+  app.get("/api/collections/check/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    const entryId = (req as any).parsedParams.entryId;
+    const token = req.cookies?.auth_token;
+    if (!token) return res.json({ saved: false });
+    // reuse requireAuth logic inline
+    try {
+      const { validateSession } = await import('./auth');
+      const user = await validateSession(token);
+      if (!user) return res.json({ saved: false });
+      const row = await db.select().from(userCollections)
+        .where(and(eq(userCollections.userId, user.id), eq(userCollections.entryId, entryId)))
+        .limit(1);
+      res.json({ saved: row.length > 0 });
+    } catch {
+      res.json({ saved: false });
+    }
+  }));
 
   // Get entries data from database
   app.get("/api/entries", async (req, res) => {
@@ -62,6 +197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const entriesQuery = `
         SELECT
           e.id,
+          e.user_id as "userId",
           COALESCE(t.title, e.title) as title,
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
           e.external_link as "externalLink",
@@ -89,6 +225,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Convert database rows to expected format
       const dbEntries = result.rows.map((row: any) => ({
         id: row.id,
+        userId: row.userId ?? null,
         title: row.title || 'Untitled',
         imageUrl: row.imageUrl || '',
         externalLink: row.externalLink || '',
@@ -111,6 +248,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Failed to load entries' });
     }
   });
+
+  // My Vault feed — owned + saved entries for current user
+  app.get("/api/entries/myvault", requireAuth, handleAsyncErrors(async (req: any, res) => {
+    const userId = req.user?.id;
+    const { db: dbI } = await import('./db');
+    const result = await dbI.execute(sql`
+      SELECT DISTINCT
+        e.id,
+        e.user_id as "userId",
+        COALESCE(t.title, e.title) as title,
+        COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
+        e.external_link as "externalLink",
+        COALESCE(ce.custom_artist, e.artist) as artist,
+        e.type,
+        e.sequence_images as "sequenceImages",
+        COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[]) as tags,
+        e.tags as "originalTags",
+        ce.user_tags as "userTags",
+        COALESCE(e.archived, false) as archived,
+        CASE WHEN uc.entry_id IS NOT NULL THEN true ELSE false END as saved
+      FROM entries e
+      LEFT JOIN titles t ON e.id = t.entry_id
+      LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+      LEFT JOIN user_collections uc ON e.id = uc.entry_id AND uc.user_id = ${userId}
+      WHERE (e.user_id = ${userId} OR uc.entry_id IS NOT NULL)
+        AND NOT EXISTS (
+          SELECT 1 FROM user_archives ua
+          WHERE ua.entry_id = e.id AND ua.user_id = ${userId}
+        )
+      ORDER BY e.id DESC
+    `);
+
+    const entries = result.rows.map((row: any) => ({
+      id: row.id,
+      userId: row.userId ?? null,
+      title: row.title || 'Untitled',
+      imageUrl: row.imageUrl || '',
+      externalLink: row.externalLink || '',
+      artist: row.artist || 'Unknown Artist',
+      type: row.type || 'image',
+      sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : [],
+      tags: Array.isArray(row.tags) ? row.tags : [],
+      originalTags: Array.isArray(row.originalTags) ? row.originalTags : [],
+      userTags: Array.isArray(row.userTags) ? row.userTags : [],
+      archived: row.archived || false,
+      saved: row.saved || false,
+    }));
+
+    res.json(entries);
+  }));
 
   // Get aggregated artists list with counts
   app.get("/api/artists", async (req, res) => {
@@ -364,14 +551,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Archive / unarchive an entry
-  app.patch("/api/entries/:id/archive", parseIntParam('id'), handleAsyncErrors(async (req, res) => {
+  // Personal archive toggle — any logged-in user (redirects to user_archives)
+  app.patch("/api/entries/:id/archive", requireAuth, parseIntParam('id'), handleAsyncErrors(async (req: any, res) => {
     const id = (req as any).parsedParams.id;
+    const userId = req.user?.id;
     const { archived } = req.body;
-    if (typeof archived !== 'boolean') {
-      return res.status(400).json({ message: 'archived must be a boolean' });
+    if (typeof archived !== 'boolean') return res.status(400).json({ message: 'archived must be a boolean' });
+    if (archived) {
+      await db.insert(userArchives).values({ userId, entryId: id }).onConflictDoNothing();
+    } else {
+      await db.delete(userArchives).where(and(eq(userArchives.userId, userId), eq(userArchives.entryId, id)));
     }
-    const { db } = await import('./db');
-    await db.execute(sql`UPDATE entries SET archived = ${archived} WHERE id = ${id}`);
     res.json({ id, archived });
   }));
 
@@ -643,7 +833,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete entry
-  app.delete("/api/entries/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req, res) => {
+  // ── Admin endpoints ───────────────────────────────────────────────────────
+
+  app.get("/api/admin/users", requireAuth, handleAsyncErrors(async (req: any, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+    const { db: dbI } = await import('./db');
+    const result = await dbI.execute(sql`
+      SELECT
+        u.id,
+        u.username,
+        u.email,
+        u.role,
+        u.created_at as "createdAt",
+        COUNT(DISTINCT e.id) as entries,
+        COUNT(DISTINCT uc.entry_id) as saved,
+        COUNT(DISTINCT ur.entry_id) as ratings,
+        COUNT(DISTINCT ua.entry_id) as archived
+      FROM users u
+      LEFT JOIN entries e ON e.user_id = u.id
+      LEFT JOIN user_collections uc ON uc.user_id = u.id
+      LEFT JOIN user_ratings ur ON ur.user_id = u.id
+      LEFT JOIN user_archives ua ON ua.user_id = u.id
+      GROUP BY u.id, u.username, u.email, u.role, u.created_at
+      ORDER BY u.id
+    `);
+    res.json(result.rows);
+  }));
+
+  app.get("/api/admin/stats", requireAuth, handleAsyncErrors(async (req: any, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
+    const { db: dbI } = await import('./db');
+    const result = await dbI.execute(sql`
+      SELECT
+        (SELECT COUNT(*) FROM users) as total_users,
+        (SELECT COUNT(*) FROM users WHERE role = 'admin') as admin_users,
+        (SELECT COUNT(*) FROM entries) as total_entries,
+        (SELECT COUNT(*) FROM user_collections) as total_saves,
+        (SELECT COUNT(*) FROM user_ratings) as total_ratings,
+        (SELECT COUNT(DISTINCT type) FROM entries) as entry_types,
+        (SELECT COUNT(*) FROM entries WHERE type = 'comic') as comics,
+        (SELECT COUNT(*) FROM entries WHERE type = 'sequence') as sequences,
+        (SELECT COUNT(*) FROM entries WHERE type = 'image') as images,
+        (SELECT COUNT(*) FROM entries WHERE type = 'story') as stories
+    `);
+    res.json(result.rows[0]);
+  }));
+
+  // Delete entry — admin only
+  app.delete("/api/entries/:entryId", requireAuth, parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
+    if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin only' });
     const entryId = (req as any).parsedParams.entryId;
     await storage.deleteEntry(entryId);
     res.json({ message: 'Entry deleted successfully' });

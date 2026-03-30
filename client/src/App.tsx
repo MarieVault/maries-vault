@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { EntriesProvider } from "./context/EntriesContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider } from "./context/AuthContext";
+import { BlurProvider } from "./context/BlurContext";
 import Home from "@/pages/Home";
 import Artists from "@/pages/Artists";
 import Tags from "@/pages/Tags";
@@ -20,6 +21,9 @@ import InstallPWA from "@/pages/InstallPWA";
 import TwitterImport from "@/pages/TwitterImport";
 import ImageViewer from "@/pages/ImageViewer";
 import Gallery from "@/pages/Gallery";
+import Login from "@/pages/Login";
+import MyCollection from "@/pages/MyCollection";
+import AdminDashboard from "@/pages/AdminDashboard";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -39,6 +43,9 @@ function Router() {
       <Route path="/share-handler" component={ShareHandler} />
       <Route path="/install-pwa" component={InstallPWA} />
       <Route path="/gallery" component={Gallery} />
+      <Route path="/login" component={Login} />
+      <Route path="/collection" component={MyCollection} />
+      <Route path="/admin" component={AdminDashboard} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -48,6 +55,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <BlurProvider>
         <ThemeProvider>
           <TooltipProvider>
             <EntriesProvider>
@@ -56,6 +64,7 @@ function App() {
             </EntriesProvider>
           </TooltipProvider>
         </ThemeProvider>
+        </BlurProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

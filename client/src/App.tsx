@@ -24,6 +24,8 @@ import Gallery from "@/pages/Gallery";
 import Login from "@/pages/Login";
 import MyCollection from "@/pages/MyCollection";
 import AdminDashboard from "@/pages/AdminDashboard";
+import DMCAPage from "@/pages/DMCA";
+import TermsPage from "@/pages/Terms";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -46,6 +48,8 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/collection" component={MyCollection} />
       <Route path="/admin" component={AdminDashboard} />
+      <Route path="/dmca" component={DMCAPage} />
+      <Route path="/terms" component={TermsPage} />
       <Route component={NotFound} />
     </Switch>
   );

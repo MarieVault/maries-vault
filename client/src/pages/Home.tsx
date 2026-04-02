@@ -88,86 +88,34 @@ export default function Home() {
       <header className="fixed top-0 left-0 right-0 z-40 h-12 bg-card/80 backdrop-blur-md border-b border-border shadow-sm">
         <div className="flex items-center justify-between h-full px-4 max-w-md mx-auto">
           <Logo />
-          
+
           <div className="flex items-center space-x-2">
-            {/* Guest: login prompt | Logged in: collection link */}
             {!isAuthenticated ? (
               <Link href="/login">
-                <Button variant="ghost" size="sm" className="w-10 h-10 rounded-full p-0 hover:bg-muted" aria-label="Login">
+                <Button variant="ghost" size="sm" className="w-9 h-9 rounded-full p-0 hover:bg-muted" aria-label="Login">
                   <LogIn size={16} className="text-pink-500" />
                 </Button>
               </Link>
-            ) : (
-              <>
-                {/* Feed toggle: Global ↔ My Vault */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setFeedMode(feedMode === "global" ? "myvault" : "global")}
-                  className={`w-10 h-10 rounded-full p-0 hover:bg-muted transition-all ${feedMode === "myvault" ? "bg-pink-50" : ""}`}
-                  title={feedMode === "global" ? "Switch to My Vault" : "Switch to Global feed"}
-                >
-                  {feedMode === "global"
-                    ? <Globe size={16} className="text-muted-foreground" />
-                    : <Bookmark size={16} className="text-pink-500" />
-                  }
-                </Button>
-                <Link href="/collection">
-                  <Button variant="ghost" size="sm" className="w-10 h-10 rounded-full p-0 hover:bg-muted" aria-label="My Collection">
-                    <Bookmark size={16} className={feedMode === "myvault" ? "text-pink-500" : "text-muted-foreground"} />
-                  </Button>
-                </Link>
-              </>
-            )}
-
-            <Link href="/gallery">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-10 h-10 rounded-full p-0 hover:bg-muted transition-all duration-200"
-                aria-label="AI Image Gallery"
-              >
-                <Images size={16} className="text-purple-500" />
-              </Button>
-            </Link>
-
-            {user?.role === 'admin' && (
-              <Link href="/admin">
-                <Button variant="ghost" size="sm" className="w-10 h-10 rounded-full p-0 hover:bg-muted" aria-label="Admin dashboard">
-                  <Crown size={16} className="text-yellow-500" />
-                </Button>
-              </Link>
-            )}
+            ) : null}
 
             {isAuthenticated && (
               <Link href="/create">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="w-10 h-10 rounded-full p-0 hover:bg-muted transition-all duration-200"
+                  className="w-9 h-9 rounded-full p-0 hover:bg-muted transition-all duration-200"
                   aria-label="Create new entry"
                 >
                   <Plus size={16} className="text-green-600" />
                 </Button>
               </Link>
             )}
-            
-            <Link href="/artists">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-10 h-10 rounded-full p-0 hover:bg-muted transition-all duration-200"
-                aria-label="View artists"
-              >
-                <Users size={16} className="text-indigo-600" />
-              </Button>
-            </Link>
 
             <Button
               onClick={toggleViewMode}
               size="sm"
               variant="ghost"
-              className="w-10 h-10 rounded-full p-0 hover:bg-muted transition-all duration-200"
+              className="w-9 h-9 rounded-full p-0 hover:bg-muted transition-all duration-200"
               aria-label={`Switch to ${viewMode === 'single' ? 'feed' : 'single'} view`}
             >
               {viewMode === 'single' ? (
@@ -181,7 +129,7 @@ export default function Home() {
               onClick={toggleBlur}
               size="sm"
               variant="ghost"
-              className="w-10 h-10 rounded-full p-0 hover:bg-muted transition-all"
+              className="w-9 h-9 rounded-full p-0 hover:bg-muted transition-all"
               title={blurEnabled ? "Blur is ON — click to disable" : "Blur is OFF — click to enable"}
             >
               {blurEnabled
@@ -259,7 +207,7 @@ export default function Home() {
           </div>
         ) : viewMode === 'single' ? (
           currentEntry ? (
-            <EntryCard entry={currentEntry} />
+            <EntryCard entry={currentEntry} showOrigin={feedMode === "myvault"} />
           ) : feedMode === "myvault" ? (
             <div className="text-center py-16 flex flex-col items-center gap-4">
               <Bookmark size={48} className="text-muted-foreground" />
@@ -281,7 +229,7 @@ export default function Home() {
           <div className="space-y-6">
             {feedEntries.length > 0 ? (
               feedEntries.map((entry) => (
-                <EntryCard key={`feed-${entry.id}`} entry={entry} />
+                <EntryCard key={`feed-${entry.id}`} entry={entry} showOrigin={feedMode === "myvault"} />
               ))
             ) : (
               <div className="text-center py-12">
@@ -365,6 +313,24 @@ export default function Home() {
 
           </div>
         )}
+
+        {/* Footer */}
+        <footer className="mt-10 pb-4 text-center text-xs text-muted-foreground space-x-3">
+          <Link href="/terms" className="hover:text-foreground underline">Terms</Link>
+          <span>·</span>
+          <Link href="/dmca" className="hover:text-foreground underline">DMCA</Link>
+          <span>·</span>
+          <span>18+ only</span>
+          {user?.role === 'admin' && (
+            <>
+              <span>·</span>
+              <Link href="/admin" className="hover:text-foreground underline text-yellow-600">
+                <Crown size={10} className="inline mb-0.5 mr-0.5" />Admin
+              </Link>
+            </>
+          )}
+        </footer>
+
       </main>
     </div>
   );

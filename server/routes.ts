@@ -211,7 +211,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           e.sequence_images as "sequenceImages",
           ce.keywords,
           ce.rating,
-          COALESCE(e.archived, false) as archived
+          COALESCE(e.archived, false) as archived,
+          e.gallery_url as "galleryUrl"
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
@@ -240,6 +241,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
         rating: row.rating || null,
         archived: row.archived || false,
+        galleryUrl: row.galleryUrl || null,
       }));
       
       res.json(dbEntries);
@@ -267,7 +269,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         e.tags as "originalTags",
         ce.user_tags as "userTags",
         COALESCE(e.archived, false) as archived,
-        CASE WHEN uc.entry_id IS NOT NULL THEN true ELSE false END as saved
+        CASE WHEN uc.entry_id IS NOT NULL THEN true ELSE false END as saved,
+        e.gallery_url as "galleryUrl"
       FROM entries e
       LEFT JOIN titles t ON e.id = t.entry_id
       LEFT JOIN custom_entries ce ON e.id = ce.entry_id
@@ -294,6 +297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       userTags: Array.isArray(row.userTags) ? row.userTags : [],
       archived: row.archived || false,
       saved: row.saved || false,
+      galleryUrl: row.galleryUrl || null,
     }));
 
     res.json(entries);

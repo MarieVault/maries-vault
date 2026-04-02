@@ -16,9 +16,10 @@ import type { Entry } from "@shared/schema";
 
 interface EntryCardProps {
   entry: Entry;
+  showOrigin?: boolean;
 }
 
-export default function EntryCard({ entry }: EntryCardProps) {
+export default function EntryCard({ entry, showOrigin = false }: EntryCardProps) {
   const { updateEntryTitle } = useEntriesContext();
   const { isAuthenticated, user } = useAuth();
   const { toast } = useToast();
@@ -632,8 +633,8 @@ export default function EntryCard({ entry }: EntryCardProps) {
                     </h2>
                   )}
                   <div className="flex items-center gap-1">
-                    <SaveButton entryId={entry.id} showLabel />
-                    <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs font-medium ${
+                    {!isOwner && <SaveButton entryId={entry.id} showLabel />}
+                    <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
                       isComic
                         ? 'bg-orange-100 text-orange-700'
                         : isSequence
@@ -646,6 +647,11 @@ export default function EntryCard({ entry }: EntryCardProps) {
                     }`}>
                       <TypeIcon size={12} />
                       <span>{isComic ? 'Comic' : isSequence ? 'Sequence' : isStory ? 'Story' : isVideo ? 'Video' : 'Image'}</span>
+                      {showOrigin && (
+                        isOwner
+                          ? <span title="You added this" className="opacity-60">✏️</span>
+                          : <span title="Saved from global feed" className="opacity-60">🔖</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -994,18 +1000,31 @@ export default function EntryCard({ entry }: EntryCardProps) {
           </div>
         )}
 
-        {/* External Link */}
-        {entry.externalLink && (
-          <div className="pt-2">
-            <a 
-              href={entry.externalLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center space-x-2 text-indigo-600 hover:text-indigo-700 transition-colors duration-200 text-sm font-medium focus-visible:focus"
-            >
-              <span>View original</span>
-              <ExternalLink size={12} />
-            </a>
+        {/* External Link + Gallery Link */}
+        {(entry.externalLink || entry.galleryUrl) && (
+          <div className="pt-2 flex flex-wrap gap-3">
+            {entry.externalLink && (
+              <a 
+                href={entry.externalLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center space-x-2 text-indigo-600 hover:text-indigo-700 transition-colors duration-200 text-sm font-medium focus-visible:focus"
+              >
+                <span>View original</span>
+                <ExternalLink size={12} />
+              </a>
+            )}
+            {entry.galleryUrl && (
+              <a 
+                href={entry.galleryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center space-x-2 text-pink-600 hover:text-pink-700 transition-colors duration-200 text-sm font-medium focus-visible:focus"
+              >
+                <span>View in Gallery</span>
+                <ExternalLink size={12} />
+              </a>
+            )}
           </div>
         )}
 

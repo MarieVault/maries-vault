@@ -27,6 +27,7 @@ export const entries = pgTable("entries", {
   content: text("content"), // For storing story text content
   userId: integer("user_id").references(() => users.id).notNull(),
   archived: boolean("archived").default(false),
+  galleryUrl: text("gallery_url"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

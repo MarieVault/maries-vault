@@ -17,6 +17,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
 
   if (isAuthenticated) {
     navigate("/");
@@ -27,6 +28,12 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setLoading(true);
+
+    if (mode === "register" && !ageConfirmed) {
+      setError("You must confirm you are 18 or older to create an account.");
+      setLoading(false);
+      return;
+    }
 
     if (mode === "register") {
       try {
@@ -109,6 +116,21 @@ export default function Login() {
           style={{ borderColor: "#f48fb1" }}
         />
 
+        {mode === "register" && (
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={ageConfirmed}
+              onChange={e => setAgeConfirmed(e.target.checked)}
+              className="mt-0.5 shrink-0 accent-pink-600"
+            />
+            <span className="text-xs leading-snug" style={{ color: "#ad1457" }}>
+              I confirm I am 18 years of age or older and agree to the{" "}
+              <a href="/terms" target="_blank" className="underline">Terms of Service</a>
+            </span>
+          </label>
+        )}
+
         {error && (
           <p className="text-sm text-center py-2 px-4 rounded-xl"
             style={{ color: "#b71c1c", background: "rgba(183,28,28,0.08)" }}>
@@ -119,7 +141,7 @@ export default function Login() {
         <Button
           type="button"
           onClick={handleSubmit as any}
-          disabled={loading}
+          disabled={loading || (mode === "register" && !ageConfirmed)}
           className="w-full h-14 rounded-2xl text-base font-bold text-white shadow-lg"
           style={{ background: "#c2185b" }}
         >

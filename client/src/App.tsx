@@ -26,6 +26,7 @@ import MyCollection from "@/pages/MyCollection";
 import AdminDashboard from "@/pages/AdminDashboard";
 import DMCAPage from "@/pages/DMCA";
 import TermsPage from "@/pages/Terms";
+import MangaList from "@/pages/MangaList";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -50,6 +51,7 @@ function Router() {
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/dmca" component={DMCAPage} />
       <Route path="/terms" component={TermsPage} />
+      <Route path="/mangalist" component={MangaList} />
       <Route component={NotFound} />
     </Switch>
   );

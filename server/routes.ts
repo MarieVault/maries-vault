@@ -1161,7 +1161,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Prepare entry data
       const entryTitle = title || tweetData.text.substring(0, 100) || 'Twitter Image';
       const entryArtist = artist || `@${tweetData.author.screen_name}`;
-      const entryTags = tags || ['twitter', 'imported'];
+      const entryTags = tags || ['twitter'];
 
       // Create entry in database
       // If single image: use imageUrl
@@ -1242,7 +1242,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Prepare entry data using first tweet's info
       const entryTitle = title || firstTweetData?.text?.substring(0, 100) || 'Twitter Images';
       const entryArtist = artist || (firstTweetData ? `@${firstTweetData.author.screen_name}` : 'Unknown');
-      const entryTags = tags || ['twitter', 'imported'];
+      const entryTags = tags || ['twitter'];
 
       // Create entry in database
       // If single image: use imageUrl
@@ -1279,6 +1279,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Image Gallery — browse AI-generated images on the server
+  // ── Manga List — public index of all comics & sequences ──
+  app.get("/api/mangalist", handleAsyncErrors(async (req, res) => {
+    const { db } = await import('./db');
+    const result = await db.execute(`
+      SELECT
+        e.id,
+        COALESCE(t.title, e.title) AS title,
+        COALESCE(ce.custom_image_url, e.image_url) AS image_url,
+        COALESCE(ce.custom_artist, e.artist) AS artist,
+        COALESCE(ce.custom_tags, e.tags) AS tags,
+        e.type,
+        e.gallery_url
+      FROM entries e
+      LEFT JOIN titles t ON e.id = t.entry_id
+      LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+      WHERE e.type IN ('comic','sequence')
+        AND COALESCE(e.archived, false) = false
+      ORDER BY COALESCE(t.title, e.title) ASC
+    `);
+    res.json(result.rows);
+  }));
+
   app.get("/api/gallery", handleAsyncErrors(async (req, res) => {
     const GENERATED_DIR = '/root/.openclaw/workspace/media/generated';
     const PORTRAITS_DIR = '/root/.openclaw/workspace/attachments/characters';
@@ -1300,7 +1322,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return results;
     }
 
-    const files = walkDir(GENERATED_DIR);
+    const EXCLUDED_KEYWORDS = ['tileable', 'texture', 'seamless', 'grass', 'wood', 'bark', 'thatch', 'stone', 'leaves', 'shrine_roof', 'roof_tiles'];
+
+    const files = walkDir(GENERATED_DIR).filter(filePath => {
+      const name = path.basename(filePath).toLowerCase();
+      return !EXCLUDED_KEYWORDS.some(kw => name.includes(kw));
+    });
 
     const items = files.map(filePath => {
       const filename = path.basename(filePath);

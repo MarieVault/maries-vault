@@ -250,6 +250,18 @@ export default function Gallery() {
               Save as Sequence {selected.size > 0 ? `(${selected.size})` : ""}
             </Button>
           </div>
+          {selected.size === 1 && (
+            <Button
+              variant="outline"
+              className="w-full border-pink-300 text-pink-700 hover:bg-pink-50"
+              onClick={() => {
+                const url = selectedList[0].url;
+                window.open(`https://choice.mariesvault.com?ref=${encodeURIComponent(url)}`, "_blank");
+              }}
+            >
+              🎭 Use in Marie's Choice
+            </Button>
+          )}
           {selected.size > 0 && (
             <button onClick={() => setSelected(new Set())} className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1">
               <X size={11} /> Clear selection

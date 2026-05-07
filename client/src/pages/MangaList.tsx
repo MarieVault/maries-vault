@@ -58,8 +58,9 @@ export default function MangaList() {
     return e.type === "sequence" ? `/sequence/${e.id}` : `/entry/${e.id}`;
   }
 
+  const ARTIST_PREFIXES = ["/farhad", "/kannel"];
   function isExternal(url: string) {
-    return url.startsWith("http") || url.startsWith("/farhad");
+    return url.startsWith("http") || ARTIST_PREFIXES.some(p => url.startsWith(p));
   }
 
   return (

@@ -7,23 +7,13 @@ import { apiRequest, queryClient } from "../lib/queryClient";
 import { ArrowLeft, Images, ImageIcon, CheckSquare, Loader2, Heart, X } from "lucide-react";
 
 interface GalleryImage {
+  id: number;
   filename: string;
   path: string;
   url: string;
   createdAt: string;
-}
-
-const FAVOURITES_KEY = "gallery_favourites";
-
-function loadFavourites(): Set<string> {
-  try {
-    const raw = localStorage.getItem(FAVOURITES_KEY);
-    return new Set(raw ? JSON.parse(raw) : []);
-  } catch { return new Set(); }
-}
-
-function saveFavourites(favs: Set<string>) {
-  localStorage.setItem(FAVOURITES_KEY, JSON.stringify([...favs]));
+  app: string;
+  hearted: boolean;
 }
 
 export default function Gallery() {
@@ -32,7 +22,6 @@ export default function Gallery() {
   const [images, setImages] = useState<GalleryImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [favourites, setFavourites] = useState<Set<string>>(loadFavourites);
   const [saving, setSaving] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState<"card" | "sequence" | null>(null);
   const [saveTitle, setSaveTitle] = useState("");
@@ -40,13 +29,25 @@ export default function Gallery() {
   const [showFavsOnly, setShowFavsOnly] = useState(false);
 
   useEffect(() => {
-    fetch("/api/gallery")
-      .then(r => r.json())
-      .then(data => { setImages(data); setLoading(false); })
-      .catch(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const imgsRes = await fetch("/api/gallery", { credentials: "include" });
+        if (imgsRes.status === 401) {
+          setLocation("/?next=/gallery");
+          return;
+        }
+        const imgs: GalleryImage[] = await imgsRes.json();
+        if (!alive) return;
+        setImages(imgs);
+        setLoading(false);
+      } catch {
+        if (!alive) return;
         toast({ variant: "destructive", title: "Error", description: "Failed to load gallery" });
         setLoading(false);
-      });
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
   const toggleSelect = (url: string) => {
@@ -58,18 +59,24 @@ export default function Gallery() {
     });
   };
 
-  const toggleFavourite = (url: string, e: React.MouseEvent) => {
+  const toggleFavourite = (img: GalleryImage, e: React.MouseEvent) => {
     e.stopPropagation();
-    setFavourites(prev => {
-      const next = new Set(prev);
-      if (next.has(url)) next.delete(url);
-      else next.add(url);
-      saveFavourites(next);
-      return next;
-    });
+    const wasFav = img.hearted;
+    setImages(prev => prev.map(i => i.id === img.id ? { ...i, hearted: !wasFav } : i));
+    fetch(`/api/ledger/${img.id}/heart`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hearted: !wasFav }),
+    }).then(r => { if (!r.ok) throw new Error(String(r.status)); })
+      .catch(() => {
+        setImages(prev => prev.map(i => i.id === img.id ? { ...i, hearted: wasFav } : i));
+        toast({ variant: "destructive", title: "Couldn't save heart" });
+      });
   };
 
-  const displayImages = showFavsOnly ? images.filter(img => favourites.has(img.url)) : images;
+  const displayImages = showFavsOnly ? images.filter(img => img.hearted) : images;
+  const heartCount = images.filter(i => i.hearted).length;
   const selectedList = images.filter(img => selected.has(img.url));
 
   const openSaveDialog = (mode: "card" | "sequence") => {
@@ -138,7 +145,7 @@ export default function Gallery() {
               className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-colors ${showFavsOnly ? "bg-pink-100 text-pink-600" : "text-muted-foreground hover:text-foreground"}`}
             >
               <Heart size={13} fill={showFavsOnly ? "currentColor" : "none"} />
-              {favourites.size > 0 && <span>{favourites.size}</span>}
+              {heartCount > 0 && <span>{heartCount}</span>}
             </button>
             <span className="text-xs text-muted-foreground">
               {selected.size > 0 ? `${selected.size} selected` : `${displayImages.length} images`}
@@ -166,7 +173,7 @@ export default function Gallery() {
             <div className="grid grid-cols-3 gap-1.5">
               {displayImages.map(img => {
                 const isSelected = selected.has(img.url);
-                const isFav = favourites.has(img.url);
+                const isFav = img.hearted;
                 const selIdx = selectedList.findIndex(i => i.url === img.url);
 
                 return (
@@ -203,7 +210,7 @@ export default function Gallery() {
                     {/* Heart button */}
                     <button
                       className="absolute top-1 right-1 p-1 rounded-full bg-black/40 hover:bg-black/60 transition-colors"
-                      onClick={(e) => toggleFavourite(img.url, e)}
+                      onClick={(e) => toggleFavourite(img, e)}
                     >
                       <Heart
                         size={13}

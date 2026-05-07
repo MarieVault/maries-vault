@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import EntryCard from "../components/EntryCard";
 import Logo from "../components/Logo";
 import { Button } from "@/components/ui/button";
-import { Users, Lock, Grid3X3, Square, Plus, Tag, Trophy, Images, Bookmark, LogIn, Globe, Eye, EyeOff, Crown } from "lucide-react";
+import { Users, Lock, Grid3X3, Square, Plus, Tag, Trophy, Images, Bookmark, LogIn, Globe, Eye, EyeOff, Crown, HardDrive, BookOpen } from "lucide-react";
 import { useBlur } from "../context/BlurContext";
 import HintBanner from "../components/HintBanner";
 import type { Entry } from "@shared/schema";
@@ -164,6 +164,21 @@ export default function Home() {
         <HintBanner />
       </div>
 
+      {isAuthenticated && user?.status === "pending" && (
+        <div className="max-w-md mx-auto px-4 mt-2">
+          <div className="rounded-md border border-amber-400 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-200 px-3 py-2 text-sm">
+            <div className="font-semibold mb-1">Account pending</div>
+            <div className="text-xs leading-relaxed">
+              Generate your first image on{" "}
+              <a href="https://choice.mariesvault.com" className="underline">Choice</a>,{" "}
+              <a href="https://change.mariesvault.com" className="underline">Change Room</a>, or{" "}
+              <a href="https://studio.mariesvault.com" className="underline">Studio</a>{" "}
+              to unlock publishing and gallery hearts.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="pb-6 px-4 max-w-md mx-auto">
         {/* Feed mode indicator */}
@@ -212,7 +227,7 @@ export default function Home() {
             <div className="text-center py-16 flex flex-col items-center gap-4">
               <Bookmark size={48} className="text-muted-foreground" />
               <h3 className="text-lg font-semibold">Your vault is empty</h3>
-              <p className="text-sm text-muted-foreground">Save entries from the global feed to build your collection.</p>
+              <p className="text-sm text-muted-foreground max-w-md">Save entries from the global feed to build your collection — or <Link href="/create" className="text-pink-500 underline">add your own entry</Link> (including tweet media) to get started.</p>
               <button onClick={() => setFeedMode("global")} className="text-sm text-pink-500 underline">Browse global feed</button>
             </div>
           ) : (
@@ -248,14 +263,30 @@ export default function Home() {
           <div className="mt-8 space-y-4">
             <div className="p-4 bg-white rounded-xl shadow-lg">
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+                <BookOpen className="text-pink-500" size={16} />
+                <span>Shared Stories</span>
+              </h3>
+              <p className="text-gray-600 text-sm mb-3">Choose-your-own-adventures and transformations from across the apps</p>
+              <Link href="/stories">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                >
+                  Browse Stories
+                </Button>
+              </Link>
+            </div>
+
+            <div className="p-4 bg-white rounded-xl shadow-lg">
+              <h3 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">
                 <Users className="text-indigo-600" size={16} />
                 <span>Browse Artists</span>
               </h3>
               <p className="text-gray-600 text-sm mb-3">Explore artwork by different artists</p>
               <Link href="/artists">
-                <Button 
-                  variant="outline" 
-                  className="w-full" 
+                <Button
+                  variant="outline"
+                  className="w-full"
                 >
                   Artists Gallery
                 </Button>
@@ -321,6 +352,14 @@ export default function Home() {
           <Link href="/dmca" className="hover:text-foreground underline">DMCA</Link>
           <span>·</span>
           <span>18+ only</span>
+          {isAuthenticated && (
+            <>
+              <span>·</span>
+              <Link href="/storage" className="hover:text-foreground underline">
+                <HardDrive size={10} className="inline mb-0.5 mr-0.5" />Storage
+              </Link>
+            </>
+          )}
           {user?.role === 'admin' && (
             <>
               <span>·</span>

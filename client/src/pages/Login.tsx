@@ -4,11 +4,25 @@ import { useAuth } from "../context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+// Only allow redirects back to our own subdomains — never take a full
+// URL from the caller or we'd have an open-redirect.
+function safeReturnTarget(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw, window.location.origin);
+    if (url.hostname === "mariesvault.com" || url.hostname.endsWith(".mariesvault.com")) {
+      return url.toString();
+    }
+  } catch {}
+  return null;
+}
+
 export default function Login() {
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, checkAuthStatus } = useAuth();
   const [, navigate] = useLocation();
   const search = useSearch();
   const params = new URLSearchParams(search);
+  const returnTo = safeReturnTarget(params.get("return"));
   const [mode, setMode] = useState<"login" | "register">(
     params.get("mode") === "register" ? "register" : "login"
   );
@@ -16,11 +30,20 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
 
+  const finish = () => {
+    if (returnTo) {
+      window.location.href = returnTo;
+    } else {
+      navigate("/");
+    }
+  };
+
   if (isAuthenticated) {
-    navigate("/");
+    finish();
     return null;
   }
 
@@ -45,15 +68,17 @@ export default function Login() {
         });
         const data = await res.json();
         if (!res.ok) { setError(data.error || "Registration failed"); setLoading(false); return; }
-        await login(username, password);
-        navigate("/");
+        // Session cookie already set by the server — just refresh auth state and go.
+        await checkAuthStatus();
+        finish();
+        return;
       } catch {
         setError("Something went wrong");
       }
     } else {
       const result = await login(username, password);
       if (result.success) {
-        navigate("/");
+        finish();
       } else {
         setError(result.message);
       }
@@ -137,6 +162,12 @@ export default function Login() {
             {error}
           </p>
         )}
+        {info && (
+          <p className="text-sm text-center py-2 px-4 rounded-xl"
+            style={{ color: "#1b5e20", background: "rgba(27,94,32,0.08)" }}>
+            {info}
+          </p>
+        )}
 
         <Button
           type="button"
@@ -152,7 +183,7 @@ export default function Login() {
       {/* Footer links */}
       <div className="mt-6 text-center space-y-3">
         <button
-          onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}
+          onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); setInfo(""); }}
           className="text-sm font-medium underline"
           style={{ color: "#ad1457" }}
         >

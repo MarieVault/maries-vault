@@ -11,6 +11,7 @@ export default function TwitterImport() {
   const { toast } = useToast();
   const [isImportingTwitter, setIsImportingTwitter] = useState(false);
   const [twitterUrls, setTwitterUrls] = useState<string[]>([""]);
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
 
   const addTwitterUrl = () => {
     setTwitterUrls(prev => [...prev, ""]);
@@ -54,6 +55,7 @@ export default function TwitterImport() {
     try {
       const response = await apiRequest("POST", "/api/extract-twitter-multi", {
         tweetUrls: validUrls,
+        visibility,
       });
 
       if (response.success && response.entry) {
@@ -184,8 +186,30 @@ export default function TwitterImport() {
                 )}
               </Button>
             </div>
+            <div className="flex items-center gap-2 pt-1">
+              <label className="text-xs text-gray-600 font-medium">Visibility:</label>
+              <button
+                type="button"
+                onClick={() => setVisibility("public")}
+                disabled={isImportingTwitter}
+                className={`text-xs px-2 py-1 rounded border ${visibility === "public" ? "bg-blue-500 text-white border-blue-500" : "bg-white text-gray-700 border-gray-300"}`}
+              >
+                Public feed
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisibility("private")}
+                disabled={isImportingTwitter}
+                className={`text-xs px-2 py-1 rounded border ${visibility === "private" ? "bg-blue-500 text-white border-blue-500" : "bg-white text-gray-700 border-gray-300"}`}
+              >
+                Private vault
+              </button>
+            </div>
             <p className="text-xs text-gray-500">
               Add multiple tweet URLs to combine their images into a single entry. First tweet = first image(s), etc.
+            </p>
+            <p className="text-xs text-gray-500">
+              Private imports are yours alone and count toward your storage quota. Public entries are free to keep.
             </p>
           </div>
         </div>

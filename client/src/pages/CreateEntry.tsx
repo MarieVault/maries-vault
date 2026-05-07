@@ -24,7 +24,8 @@ export default function CreateEntry() {
     externalLink: "",
     artist: "",
     tags: "",
-    type: "image" as "comic" | "image" | "sequence"
+    type: "image" as "comic" | "image" | "sequence",
+    visibility: "public" as "public" | "private",
   });
 
   const [sequenceImages, setSequenceImages] = useState<string[]>([""]);
@@ -166,6 +167,7 @@ export default function CreateEntry() {
     try {
       const response = await apiRequest("POST", "/api/extract-twitter-multi", {
         tweetUrls: validUrls,
+        visibility: formData.visibility,
       });
 
       if (response.success && response.entry) {
@@ -224,6 +226,7 @@ export default function CreateEntry() {
           ? formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
           : [],
         type: formData.type,
+        visibility: formData.visibility,
         ...(formData.type === 'sequence' && {
           sequenceImages: sequenceImages.filter(img => img.trim().length > 0)
         })
@@ -413,6 +416,25 @@ export default function CreateEntry() {
                   <SelectItem value="sequence">Sequence</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="visibility">Visibility</Label>
+              <Select
+                value={formData.visibility}
+                onValueChange={(value: "public" | "private") => handleInputChange("visibility", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">Share with everyone (public feed)</SelectItem>
+                  <SelectItem value="private">Keep in my vault only (counts toward quota)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Public entries appear in the community feed and don't count against your storage quota. Private entries are yours alone and count toward it.
+              </p>
             </div>
 
             {formData.type === 'sequence' ? (

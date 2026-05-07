@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -27,6 +27,7 @@ export const entries = pgTable("entries", {
   content: text("content"), // For storing story text content
   userId: integer("user_id").references(() => users.id).notNull(),
   archived: boolean("archived").default(false),
+  visibility: text("visibility").notNull().default("public"), // 'public' | 'private'
   galleryUrl: text("gallery_url"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -85,6 +86,54 @@ export const userCollections = pgTable("user_collections", {
   addedAt: timestamp("added_at").defaultNow(),
 });
 
+export const galleryFavourites = pgTable("gallery_favourites", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  filename: text("filename").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// One row per generated artifact across Choice / Change / Studio. Source of
+// truth for gallery reads, quota accounting, and hearts.
+export const storageEntries = pgTable("storage_entries", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  app: text("app").notNull(),                     // 'choice' | 'change' | 'studio'
+  kind: text("kind").notNull(),                   // 'image' | 'session-json' | …
+  path: text("path").notNull(),                   // R2 key or absolute local path
+  sizeBytes: integer("size_bytes").notNull(),
+  mime: text("mime"),
+  hearted: boolean("hearted").notNull().default(false),
+  sessionRef: text("session_ref"),                // opaque app-side id to group
+  meta: jsonb("meta"),                            // prompt, seed, tags…
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  appPathUnique: unique("storage_entries_app_path_unique").on(t.app, t.path),
+}));
+
+// Public user stories shared at gallery.mariesvault.com/s/:slug. Snapshot of
+// the session content at publish time; source app can delete its session
+// without breaking the share. Images are hardlinked into a published-only
+// directory so quota accounting and unpublish-to-delete work cleanly.
+export const publishedStories = pgTable("published_stories", {
+  id: serial("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  app: text("app").notNull(),                     // 'choice' | 'change'
+  sourceRef: text("source_ref"),                  // sibling-app session id
+  title: text("title").notNull(),
+  summary: text("summary"),
+  content: jsonb("content").notNull(),            // steps, character name, etc.
+  coverImagePath: text("cover_image_path"),       // composite OG card path
+  beforeImagePath: text("before_image_path"),     // original/first image
+  afterImagePath: text("after_image_path"),       // user-picked final
+  sourcePaths: text("source_paths").array(),      // all ledger paths referenced — lock source
+  tags: text("tags").array(),
+  nsfw: boolean("nsfw").notNull().default(false),
+  views: integer("views").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -106,6 +155,7 @@ export const insertEntrySchema = createInsertSchema(entries).pick({
   sequenceImages: true,
   content: true,
   userId: true,
+  visibility: true,
 });
 
 export const insertCustomEntrySchema = createInsertSchema(customEntries).pick({
@@ -161,4 +211,6 @@ export interface Entry {
   content?: string;
   rating?: number | null;
   archived?: boolean;
+  userId?: number | null;
+  visibility?: 'public' | 'private';
 }

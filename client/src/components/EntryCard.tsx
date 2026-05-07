@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Edit, ExternalLink, Palette, Camera, User, Users, BookOpen, Image, Trash2, Star, X, ImageIcon, Images, Film, Archive, ArchiveRestore } from "lucide-react";
+import { Edit, ExternalLink, Palette, Camera, User, Users, BookOpen, Image, Trash2, Star, X, ImageIcon, Images, Film, Archive, ArchiveRestore, Lock, Globe } from "lucide-react";
 import { apiRequest, queryClient } from "../lib/queryClient";
 import SaveButton from "./SaveButton";
 import { useBlur } from "../context/BlurContext";
@@ -426,6 +426,36 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
   };
 
   const [isArchiving, setIsArchiving] = useState(false);
+  const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
+  const [visibility, setVisibility] = useState<'public' | 'private'>(
+    (entry.visibility === 'private' ? 'private' : 'public')
+  );
+
+  useEffect(() => {
+    setVisibility(entry.visibility === 'private' ? 'private' : 'public');
+  }, [entry.id, entry.visibility]);
+
+  const handleVisibilityToggle = async () => {
+    if (!isOwner) return;
+    const next = visibility === 'private' ? 'public' : 'private';
+    setIsTogglingVisibility(true);
+    try {
+      await apiRequest("PATCH", `/api/entries/${entry.id}/visibility`, { visibility: next });
+      setVisibility(next);
+      queryClient.invalidateQueries({ queryKey: ["/api/entries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entries/myvault"] });
+      toast({
+        title: next === 'private' ? "Now private" : "Now public",
+        description: next === 'private'
+          ? "Only you can see this entry."
+          : "Visible in the global feed.",
+      });
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Couldn't update visibility." });
+    } finally {
+      setIsTogglingVisibility(false);
+    }
+  };
 
   const handleArchive = async (archive: boolean) => {
     setIsArchiving(true);
@@ -634,6 +664,15 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
                   )}
                   <div className="flex items-center gap-1">
                     {!isOwner && <SaveButton entryId={entry.id} showLabel />}
+                    {isOwner && visibility === 'private' && (
+                      <div
+                        className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-slate-200 text-slate-700"
+                        title="Private — only visible to you"
+                      >
+                        <Lock size={12} />
+                        <span>Private</span>
+                      </div>
+                    )}
                     <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
                       isComic
                         ? 'bg-orange-100 text-orange-700'
@@ -1028,7 +1067,7 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
           </div>
         )}
 
-        {/* Archive (any logged-in user) + Delete (admin only) */}
+        {/* Archive (any logged-in user) + Visibility (owner) + Delete (admin only) */}
         {isAuthenticated && (
           <div className="pt-2 border-t border-gray-200 flex gap-2 flex-wrap">
             <Button
@@ -1045,6 +1084,23 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
                 : <><Archive size={14} className="mr-1" />{isArchiving ? "Archiving..." : "Archive"}</>
               }
             </Button>
+            {isOwner && (
+              <Button
+                onClick={handleVisibilityToggle}
+                variant="outline"
+                size="sm"
+                disabled={isTogglingVisibility}
+                className={visibility === 'private'
+                  ? "text-slate-700 border-slate-300 hover:bg-slate-50"
+                  : "text-sky-600 border-sky-300 hover:bg-sky-50"}
+                title={visibility === 'private' ? "Make this entry public" : "Make this entry private"}
+              >
+                {visibility === 'private'
+                  ? <><Globe size={14} className="mr-1" />{isTogglingVisibility ? "Updating..." : "Make public"}</>
+                  : <><Lock size={14} className="mr-1" />{isTogglingVisibility ? "Updating..." : "Make private"}</>
+                }
+              </Button>
+            )}
             {isAdmin && (
               <Button
                 onClick={handleDelete}

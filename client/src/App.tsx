@@ -24,6 +24,9 @@ import Gallery from "@/pages/Gallery";
 import Login from "@/pages/Login";
 import MyCollection from "@/pages/MyCollection";
 import AdminDashboard from "@/pages/AdminDashboard";
+import Storage from "@/pages/Storage";
+import PublishedStory from "@/pages/PublishedStory";
+import Stories from "@/pages/Stories";
 import DMCAPage from "@/pages/DMCA";
 import TermsPage from "@/pages/Terms";
 import MangaList from "@/pages/MangaList";
@@ -49,6 +52,9 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/collection" component={MyCollection} />
       <Route path="/admin" component={AdminDashboard} />
+      <Route path="/storage" component={Storage} />
+      <Route path="/s/:slug" component={PublishedStory} />
+      <Route path="/stories" component={Stories} />
       <Route path="/dmca" component={DMCAPage} />
       <Route path="/terms" component={TermsPage} />
       <Route path="/mangalist" component={MangaList} />

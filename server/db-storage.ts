@@ -75,13 +75,14 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async createEntry(entryData: { title: string; imageUrl?: string; externalLink?: string; artist: string; circleId?: number | null; tags?: string[]; userTags?: string[]; keywords?: string[]; type: 'comic' | 'image' | 'sequence' | 'story'; sequenceImages?: string[]; content?: string }): Promise<any> {
+  async createEntry(entryData: { title: string; imageUrl?: string; externalLink?: string; artist: string; circleId?: number | null; tags?: string[]; userTags?: string[]; keywords?: string[]; type: 'comic' | 'image' | 'sequence' | 'story' | 'video'; sequenceImages?: string[]; content?: string; userId: number; visibility?: 'public' | 'private' }): Promise<any> {
+    const { userTags, keywords, ...insertData } = entryData;
     const result = await db.insert(entries).values({
-      ...entryData,
+      ...insertData,
       imageUrl: entryData.imageUrl || '',
       sequenceImages: entryData.sequenceImages || [],
       content: entryData.content || null,
-      userId: 7 // M13 user ID
+      visibility: entryData.visibility || 'public',
     }).returning();
 
     // If userTags are provided, save them to custom_entries table

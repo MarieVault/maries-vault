@@ -16,6 +16,13 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
   etag: true,
 }));
 
+// Serve gallery portrait images staged in the OpenClaw attachments dir
+app.use('/portraits', express.static('/root/.openclaw/workspace/attachments/characters', {
+  maxAge: '1y',
+  immutable: true,
+  etag: true,
+}));
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -70,9 +77,9 @@ app.use((req, res, next) => {
   const port = process.env.PORT || 4000;
   server.listen({
     port,
-    host: "0.0.0.0",
+    host: "127.0.0.1",
     reusePort: true,
   }, () => {
-    log(`serving on port ${port}`);
+    log(`serving on 127.0.0.1:${port}`);
   });
 })();

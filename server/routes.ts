@@ -1770,20 +1770,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   async function buildQuotaPayload(userId: number) {
-    const rows = await db.execute<{ app: string; count: number; bytes: number }>(sql`
-      SELECT app, COUNT(*)::int AS count, COALESCE(SUM(size_bytes), 0)::bigint AS bytes
-      FROM storage_entries
-      WHERE user_id = ${userId}
-      GROUP BY app
-    `);
-    const breakdown = ((rows as any).rows ?? rows).map((r: any) => ({
+    const [usageRows, userRows] = await Promise.all([
+      db.execute<{ app: string; count: number; bytes: number }>(sql`
+        SELECT app, COUNT(*)::int AS count, COALESCE(SUM(size_bytes), 0)::bigint AS bytes
+        FROM storage_entries
+        WHERE user_id = ${userId}
+        GROUP BY app
+      `),
+      db.execute<{ role: string }>(sql`SELECT role FROM users WHERE id = ${userId}`),
+    ]);
+    const breakdown = ((usageRows as any).rows ?? usageRows).map((r: any) => ({
       app: r.app,
       count: Number(r.count || 0),
       bytes: Number(r.bytes || 0),
     }));
     const usedBytes = breakdown.reduce((acc: number, r: any) => acc + r.bytes, 0);
-    const tier = "free"; // TODO wire Stripe (task #9) to select plus/pro
-    const quotaBytes = QUOTA_TIERS[tier];
+    const role = (((userRows as any).rows ?? userRows)[0] as any)?.role ?? "user";
+    const isAdmin = role === "admin";
+    const tier = isAdmin ? "unlimited" : "free"; // TODO wire Patreon webhooks to select plus/pro
+    const quotaBytes = isAdmin ? 0 : QUOTA_TIERS[tier] ?? QUOTA_TIERS.free;
     return {
       userId,
       tier,

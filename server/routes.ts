@@ -1625,7 +1625,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Stream a ledger-tracked image by id after verifying ownership.
-  app.get("/api/gallery/image/:id", requireAuth, handleAsyncErrors(async (req: any, res) => {
+  app.get("/api/gallery/image/:id", requireAuthOrService, handleAsyncErrors(async (req: any, res) => {
     const userId = req.user.id;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "bad id" });

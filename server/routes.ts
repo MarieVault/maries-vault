@@ -1300,12 +1300,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Fetch all emojis in a single query. The lowercased tags are bound as a
-      // single array parameter — no string interpolation into SQL.
+      // Fetch all emojis in a single query. Each lowercased tag is bound as its
+      // own placeholder in an IN list — no string interpolation into SQL.
       const lowered = tags.map(t => t.toLowerCase());
       const result = await db.execute(sql`
         SELECT tag_name, emoji FROM tag_emojis
-        WHERE LOWER(tag_name) = ANY(${lowered})
+        WHERE LOWER(tag_name) IN (${sql.join(lowered.map(t => sql`${t}`), sql`, `)})
       `);
 
       const emojiMap: Record<string, string> = {};

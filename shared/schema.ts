@@ -215,4 +215,5 @@ export interface Entry {
   archived?: boolean;
   userId?: number | null;
   visibility?: 'public' | 'private';
+  galleryUrl?: string | null; // External gallery link (e.g. KannelArt/Farhad imports)
 }

@@ -66,19 +66,13 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
     queryKey: ["/api/entries"],
   });
 
-  // Fetch tag emojis for all tags in this entry (original + user tags)
-  const allTags = [
-    ...(customTags || entry.originalTags || entry.tags || []),
-    ...(userTags || [])
-  ];
-  const uniqueTags = [...new Set(allTags)]; // Remove duplicates
-
-  const { data: tagEmojisData } = useQuery({
-    queryKey: ["/api/tag-emojis/batch", uniqueTags],
-    enabled: uniqueTags.length > 0,
+  // One shared query — React Query dedupes every card into a single request for
+  // the whole tag→emoji map (a small curated table). Keyed by lowercased tag,
+  // so lookups below use tag.toLowerCase().
+  const { data: tagEmojisData } = useQuery<Record<string, string>>({
+    queryKey: ["/api/tag-emojis/all"],
     queryFn: async () => {
-      // One batched request per card instead of one fetch per tag.
-      const res = await fetch(`/api/tag-emojis/batch?tags=${uniqueTags.map(encodeURIComponent).join(",")}`);
+      const res = await fetch("/api/tag-emojis/all");
       if (!res.ok) return {} as Record<string, string>;
       return (await res.json()) as Record<string, string>;
     }

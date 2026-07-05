@@ -37,7 +37,7 @@ export default function TagEditor({
               {(customTags ? [...customTags, ...userTags] : entry.tags)?.map((tag, index) => (
                 <Link key={index} href={`/tags/${encodeURIComponent(tag.toLowerCase())}`}>
                   <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-full text-xs hover:bg-indigo-100 hover:text-indigo-700 transition-colors duration-200 cursor-pointer inline-flex items-center gap-1">
-                    {tagEmojisData?.[tag] && <span>{tagEmojisData[tag]}</span>}
+                    {tagEmojisData?.[tag.toLowerCase()] && <span>{tagEmojisData[tag.toLowerCase()]}</span>}
                     {tag}
                   </span>
                 </Link>

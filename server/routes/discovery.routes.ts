@@ -332,6 +332,19 @@ export function registerDiscoveryRoutes(app: Express): void {
 
   // Get custom entry data
 
+  // Whole tag→emoji map (small curated table, ~50 rows). One shared client
+  // query powers emoji display across the entire feed instead of a batch
+  // request per card. Keyed by lowercased tag for case-insensitive lookup.
+  // Registered before /:tagName so "all" isn't captured as a param.
+  app.get("/api/tag-emojis/all", handleAsyncErrors(async (_req, res) => {
+    const result = await db.execute(sql`SELECT tag_name, emoji FROM tag_emojis`);
+    const map: Record<string, string> = {};
+    for (const row of result.rows as any[]) {
+      map[String(row.tag_name).toLowerCase()] = row.emoji;
+    }
+    res.json(map);
+  }));
+
   app.get("/api/tag-emojis/batch", handleAsyncErrors(async (req, res) => {
     const tagNames = req.query.tags;
 

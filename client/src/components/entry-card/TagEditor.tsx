@@ -45,10 +45,8 @@ export default function TagEditor({
               {isOwner && (
                 <button
                   onClick={() => {
-                    // When editing, combine custom_tags (or original tags) with user_tags so all displayed tags are editable
-                    const baseTags = customTags || entry.originalTags || [];
-                    const allEditableTags = [...baseTags, ...(userTags || [])];
-                    setCurrentTags(allEditableTags);
+                    // Edit the currently displayed tags; entry.tags already combines custom + user tags.
+                    setCurrentTags([...(entry.tags || [])]);
                     setTagsDraft("");
                     setIsEditingTags(true);
                   }}

@@ -179,10 +179,12 @@ export function registerDiscoveryRoutes(app: Express): void {
           e.sequence_images as "sequenceImages",
           ce.keywords,
           ce.rating,
+          ur.rating as "userRating",
           COALESCE(e.visibility, 'public') as visibility
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        LEFT JOIN user_ratings ur ON e.id = ur.entry_id AND ur.user_id = ${viewerId ?? 0}
         LEFT JOIN circles c ON e.circle_id = c.id
         WHERE EXISTS (
           SELECT 1 FROM unnest(COALESCE(ce.custom_tags, e.tags) || COALESCE(ce.user_tags, ARRAY[]::text[])) AS tag
@@ -208,6 +210,7 @@ export function registerDiscoveryRoutes(app: Express): void {
         sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
         keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
         rating: row.rating || null,
+        userRating: row.userRating ?? null,
         visibility: row.visibility || 'public',
       }));
 
@@ -243,11 +246,13 @@ export function registerDiscoveryRoutes(app: Express): void {
           e.sequence_images as "sequenceImages",
           ce.keywords,
           ce.rating,
+          ur.rating as "userRating",
           COALESCE(e.archived, false) as archived,
           COALESCE(e.visibility, 'public') as visibility
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        LEFT JOIN user_ratings ur ON e.id = ur.entry_id AND ur.user_id = ${viewerId ?? 0}
         LEFT JOIN circles c ON e.circle_id = c.id
         WHERE LOWER(COALESCE(ce.custom_artist, e.artist)) = LOWER(${artistName})
           AND (COALESCE(e.visibility, 'public') = 'public' OR e.user_id = ${viewerId ?? 0})
@@ -270,6 +275,7 @@ export function registerDiscoveryRoutes(app: Express): void {
         sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
         keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
         rating: row.rating || null,
+        userRating: row.userRating ?? null,
         archived: row.archived || false,
         visibility: row.visibility || 'public',
       }));

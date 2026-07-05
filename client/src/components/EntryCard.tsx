@@ -50,7 +50,7 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
   const [userTags, setUserTags] = useState<string[]>(entry.userTags || []);
   const [currentTags, setCurrentTags] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [rating, setRating] = useState<number | null>((entry as any).rating || null);
+  const [rating, setRating] = useState<number | null>(entry.userRating ?? null);
   const [isImageRevealed, setIsImageRevealed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -74,26 +74,13 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
   const uniqueTags = [...new Set(allTags)]; // Remove duplicates
 
   const { data: tagEmojisData } = useQuery({
-    queryKey: ["/api/tag-emojis/bulk", uniqueTags],
+    queryKey: ["/api/tag-emojis/batch", uniqueTags],
     enabled: uniqueTags.length > 0,
     queryFn: async () => {
-      const promises = uniqueTags.map(async (tagName) => {
-        try {
-          const response = await fetch(`/api/tag-emojis/${encodeURIComponent(tagName)}`);
-          if (response.ok) {
-            const data = await response.json();
-            return { tagName, emoji: data.emoji };
-          }
-        } catch (error) {
-          console.log(`No emoji found for tag: ${tagName}`);
-        }
-        return { tagName, emoji: null };
-      });
-      const results = await Promise.all(promises);
-      return results.reduce((acc, { tagName, emoji }) => {
-        if (emoji) acc[tagName] = emoji;
-        return acc;
-      }, {} as Record<string, string>);
+      // One batched request per card instead of one fetch per tag.
+      const res = await fetch(`/api/tag-emojis/batch?tags=${uniqueTags.map(encodeURIComponent).join(",")}`);
+      if (!res.ok) return {} as Record<string, string>;
+      return (await res.json()) as Record<string, string>;
     }
   });
 
@@ -443,51 +430,19 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
     }
   };
 
-  // Reset and load custom data when entry changes
+  // Reset optimistic overrides when the entry changes. All display data
+  // (image/artist/tags/userRating) is already hydrated into the entry prop by
+  // the feed query, so no per-card /api/custom-entries or /api/ratings fetch is
+  // needed — display falls back to entry.* and rating seeds from userRating.
   useEffect(() => {
-    const loadCustomData = async () => {
-      try {
-        // Reset all custom state first to prevent previous entry data from persisting
-        setCustomImage(null);
-        setCustomArtist(null);
-        setCustomTags(null);
-        setUserTags(entry.userTags || []);
-        setRating(null);
-        setIsImageRevealed(false); // Reset blur overlay state
-        setDraft(entry.title || "");
-        setArtistDraft(entry.artist || "");
-
-        // Load custom data for this entry
-        const response = await fetch(`/api/custom-entries/${entry.id}`);
-        if (response.ok) {
-          const customData = await response.json();
-          if (customData.customImageUrl) setCustomImage(customData.customImageUrl);
-          if (customData.customArtist) setCustomArtist(customData.customArtist);
-          if (customData.customTags) setCustomTags(customData.customTags);
-          if (customData.userTags) setUserTags(customData.userTags);
-        }
-
-        // Load personal rating (only if logged in)
-        const ratingRes = await fetch(`/api/ratings/${entry.id}`, { credentials: 'include' });
-        if (ratingRes.ok) {
-          const ratingData = await ratingRes.json();
-          setRating(ratingData.rating ?? null);
-        }
-      } catch (error) {
-        console.error('Error loading custom data:', error);
-        // Reset state even on error to prevent stale data
-        setCustomImage(null);
-        setCustomArtist(null);
-        setCustomTags(null);
-        setUserTags(entry.userTags || []);
-        setRating(null);
-        setIsImageRevealed(false);
-        setDraft(entry.title || "");
-        setArtistDraft(entry.artist || "");
-      }
-    };
-
-    loadCustomData();
+    setCustomImage(null);
+    setCustomArtist(null);
+    setCustomTags(null);
+    setUserTags(entry.userTags || []);
+    setRating(entry.userRating ?? null);
+    setIsImageRevealed(false);
+    setDraft(entry.title || "");
+    setArtistDraft(entry.artist || "");
   }, [entry.id]);
 
   const displayTitle = entry.title || "Untitled";

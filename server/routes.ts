@@ -9,7 +9,7 @@ import fs from "fs";
 import archiver from "archiver";
 import { db } from "./db";
 import { eq, sql, and, desc } from "drizzle-orm";
-import { handleLogin, handleLogout, handleRegister, handleMe, requireAuth, optionalAuth, requireAuthOrService } from "./auth";
+import { handleLogin, handleLogout, handleRegister, handleMe, requireAuth, requireAdmin, optionalAuth, requireAuthOrService, requireAuthOrPublicEntry } from "./auth";
 import { handlePublish, handleUnpublish, listMyPublished, listPublicStories, getStoryBySlug, incrementViews, PUBLISHED_ROOT, appHostname, storyUrlFor } from "./stories.js";
 
 
@@ -45,11 +45,21 @@ function handleZodValidation<T>(schema: z.ZodSchema<T>) {
   };
 }
 
+// True if the user owns the entry or is an admin. Gates customisation writes
+// (titles, custom_entries, sequence images) which mutate an entry's shared
+// display for every viewer, so they must be restricted to the entry's owner.
+async function userMayEditEntry(entryId: number, user: any): Promise<boolean> {
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  const [row] = await db.select({ userId: entries.userId }).from(entries).where(eq(entries.id, entryId)).limit(1);
+  return !!row && row.userId === user.id;
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes (unprotected)
   app.post("/api/auth/login", handleLogin);
   app.post("/api/auth/logout", handleLogout);
-  app.post("/api/auth/register", handleRegister);
+  app.post("/api/auth/register", requireAuth, requireAdmin, handleRegister);
   app.get("/api/auth/me", handleMe);
   // SSO validator — used by sibling apps (Choice, Change Room) to resolve the
   // shared .mariesvault.com session cookie into a user without importing auth.
@@ -210,6 +220,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ rating: null });
   }));
 
+  // Batch get ratings — MUST be before /:entryId to avoid route conflict
+  app.get("/api/ratings/batch", handleAsyncErrors(async (req: any, res) => {
+    const idsStr = req.query.ids as string;
+    if (!idsStr) return res.json({ ratings: {} });
+    const entryIds = idsStr.split(',').map(Number).filter(n => n > 0);
+    if (entryIds.length === 0) return res.json({ ratings: {} });
+    const token = req.cookies?.auth_session;
+    if (!token) return res.json({ ratings: {} });
+    try {
+      const { validateSession } = await import('./auth');
+      const user = await validateSession(token);
+      if (!user) return res.json({ ratings: {} });
+      const rows = await db.select().from(userRatings)
+        .where(and(
+          eq(userRatings.userId, user.id),
+          sql`${userRatings.entryId} = ANY(${entryIds})`
+        ));
+      const out: Record<number, number> = {};
+      for (const r of rows) out[r.entryId] = r.rating;
+      res.json({ ratings: out });
+    } catch {
+      res.json({ ratings: {} });
+    }
+  }));
+
   // Get user's rating for an entry
   app.get("/api/ratings/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
     const entryId = (req as any).parsedParams.entryId;
@@ -269,7 +304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Check if current user has saved an entry (public endpoint, returns false if not logged in)
   app.get("/api/collections/check/:entryId", parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
     const entryId = (req as any).parsedParams.entryId;
-    const token = req.cookies?.auth_token;
+    const token = req.cookies?.auth_session;
     if (!token) return res.json({ saved: false });
     // reuse requireAuth logic inline
     try {
@@ -286,7 +321,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Get entries data from database
-  app.get("/api/entries", optionalAuth, async (req: any, res) => {
+  app.get("/api/entries", requireAuth, async (req: any, res) => {
     try {
       const { db } = await import('./db');
       const viewerId = req.user?.id;
@@ -297,6 +332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           e.id,
           e.user_id as "userId",
           COALESCE(t.title, e.title) as title,
+          e.native_title as "nativeTitle",
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
           e.external_link as "externalLink",
           COALESCE(ce.custom_artist, e.artist) as artist,
@@ -309,12 +345,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           e.sequence_images as "sequenceImages",
           ce.keywords,
           ce.rating,
+          ur.rating as "userRating",
           COALESCE(e.archived, false) as archived,
           e.gallery_url as "galleryUrl",
           COALESCE(e.visibility, 'public') as visibility
         FROM entries e
         LEFT JOIN titles t ON e.id = t.entry_id
         LEFT JOIN custom_entries ce ON e.id = ce.entry_id
+        LEFT JOIN user_ratings ur ON e.id = ur.entry_id AND ur.user_id = ${viewerId ?? 0}
         LEFT JOIN circles c ON e.circle_id = c.id
         WHERE COALESCE(e.archived, false) = false
           AND (COALESCE(e.visibility, 'public') = 'public' OR e.user_id = ${viewerId ?? 0})
@@ -338,11 +376,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sequenceImages: Array.isArray(row.sequenceImages) ? row.sequenceImages : (row.sequenceImages ? [row.sequenceImages] : []),
         keywords: Array.isArray(row.keywords) ? row.keywords : (row.keywords ? [row.keywords] : []),
         rating: row.rating || null,
+        userRating: row.userRating ?? null,
         archived: row.archived || false,
         galleryUrl: row.galleryUrl || null,
         visibility: row.visibility || 'public',
       }));
-      
+
       res.json(dbEntries);
     } catch (error) {
       console.error('Error loading entries:', error);
@@ -369,12 +408,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ce.user_tags as "userTags",
         COALESCE(e.archived, false) as archived,
         CASE WHEN uc.entry_id IS NOT NULL THEN true ELSE false END as saved,
+        ur.rating as "userRating",
         e.gallery_url as "galleryUrl",
         COALESCE(e.visibility, 'public') as visibility
       FROM entries e
       LEFT JOIN titles t ON e.id = t.entry_id
       LEFT JOIN custom_entries ce ON e.id = ce.entry_id
       LEFT JOIN user_collections uc ON e.id = uc.entry_id AND uc.user_id = ${userId}
+      LEFT JOIN user_ratings ur ON e.id = ur.entry_id AND ur.user_id = ${userId}
       WHERE (e.user_id = ${userId} OR uc.entry_id IS NOT NULL)
         AND (COALESCE(e.visibility, 'public') = 'public' OR e.user_id = ${userId})
         AND NOT EXISTS (
@@ -398,6 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       userTags: Array.isArray(row.userTags) ? row.userTags : [],
       archived: row.archived || false,
       saved: row.saved || false,
+      userRating: row.userRating ?? null,
       galleryUrl: row.galleryUrl || null,
       visibility: row.visibility || 'public',
     }));
@@ -409,7 +451,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // vault (entries they own + entries they've saved to their collection).
   // Unauthenticated callers get an empty list so new users don't see Marie's
   // global artist roster.
-  app.get("/api/artists", optionalAuth, async (req: any, res) => {
+  app.get("/api/artists", requireAuth, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) return res.json([]);
@@ -444,7 +486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get artist rankings with Bayesian average
-  app.get("/api/artists/rankings", async (req, res) => {
+  app.get("/api/artists/rankings", requireAuth, async (req, res) => {
     try {
       const { db } = await import('./db');
       const MIN_RATED_ENTRIES = 3; // Minimum rated entries to appear in rankings
@@ -459,6 +501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           FROM entries e
           JOIN custom_entries ce ON e.id = ce.entry_id
           WHERE ce.rating IS NOT NULL
+            AND COALESCE(e.visibility, 'public') = 'public'
         ),
         artist_stats AS (
           SELECT
@@ -470,6 +513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           FROM entries e
           LEFT JOIN custom_entries ce ON e.id = ce.entry_id
           LEFT JOIN LATERAL unnest(COALESCE(ce.custom_tags, e.tags)) AS unnested_tag ON true
+          WHERE COALESCE(e.visibility, 'public') = 'public'
           GROUP BY COALESCE(ce.custom_artist, e.artist)
           HAVING COUNT(ce.rating) >= ${MIN_RATED_ENTRIES}
         )
@@ -514,7 +558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get aggregated tags list with counts — scoped to the current user's vault.
-  app.get("/api/tags", optionalAuth, async (req: any, res) => {
+  app.get("/api/tags", requireAuth, async (req: any, res) => {
     try {
       const userId = req.user?.id;
       if (!userId) return res.json([]);
@@ -551,7 +595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get entries for a specific tag
-  app.get("/api/tags/:tagName/entries", optionalAuth, async (req: any, res) => {
+  app.get("/api/tags/:tagName/entries", requireAuth, async (req: any, res) => {
     try {
       const tagName = decodeURIComponent(req.params.tagName).toLowerCase();
       const viewerId = req.user?.id;
@@ -563,6 +607,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           e.id,
           e.user_id as "userId",
           COALESCE(t.title, e.title) as title,
+          e.native_title as "nativeTitle",
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
           e.external_link as "externalLink",
           COALESCE(ce.custom_artist, e.artist) as artist,
@@ -615,7 +660,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get entries for a specific artist
-  app.get("/api/artists/:artistName/entries", optionalAuth, async (req: any, res) => {
+  app.get("/api/artists/:artistName/entries", requireAuth, async (req: any, res) => {
     try {
       const artistName = decodeURIComponent(req.params.artistName);
       const viewerId = req.user?.id;
@@ -626,6 +671,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           e.id,
           e.user_id as "userId",
           COALESCE(t.title, e.title) as title,
+          e.native_title as "nativeTitle",
           COALESCE(ce.custom_image_url, e.image_url) as "imageUrl",
           e.external_link as "externalLink",
           COALESCE(ce.custom_artist, e.artist) as artist,
@@ -707,7 +753,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Get individual entry by ID
-  app.get("/api/entries/:id", optionalAuth, parseIntParam('id'), handleAsyncErrors(async (req: any, res) => {
+  app.get("/api/entries/:id", requireAuthOrPublicEntry, parseIntParam('id'), handleAsyncErrors(async (req: any, res) => {
     const id = (req as any).parsedParams.id;
     const viewerId = req.user?.id;
 
@@ -740,13 +786,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Set/update custom title for entry
-  app.post("/api/titles", handleZodValidation(insertTitleSchema), handleAsyncErrors(async (req, res) => {
+  app.post("/api/titles", requireAuth, handleZodValidation(insertTitleSchema), handleAsyncErrors(async (req: any, res) => {
     const validatedData = req.body;
-    
+
     if (!validatedData.title.trim()) {
       return res.status(400).json({ message: 'Title cannot be empty' });
     }
-    
+
+    if (!(await userMayEditEntry(validatedData.entryId, req.user))) {
+      return res.status(403).json({ message: 'Not your entry' });
+    }
+
     const title = await storage.setTitle({
       entryId: validatedData.entryId,
       title: validatedData.title.trim()
@@ -791,7 +841,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Upload image endpoint
-  app.post("/api/upload-image", upload.single('image'), async (req, res) => {
+  app.post("/api/upload-image", requireAuth, upload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: 'No image file provided' });
@@ -908,7 +958,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Update custom entry (image and/or artist)
-  app.post("/api/custom-entries", async (req, res) => {
+  app.post("/api/custom-entries", requireAuth, async (req: any, res) => {
     try {
       const schema = z.object({
         entryId: z.number(),
@@ -921,6 +971,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const validatedData = schema.parse(req.body);
+
+      if (!(await userMayEditEntry(validatedData.entryId, req.user))) {
+        return res.status(403).json({ message: 'Not your entry' });
+      }
 
       // Handle backwards compatibility: merge keywords into userTags
       let userTags = validatedData.userTags;
@@ -966,6 +1020,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         keywords: z.array(z.string()).optional(), // DEPRECATED: backwards compatibility
         type: z.enum(['comic', 'image', 'sequence', 'story', 'video']).default('image'),
         sequenceImages: z.array(z.string()).optional(),
+        content: z.string().optional(),
         visibility: z.enum(['public', 'private']).default('public'),
       });
 
@@ -1080,7 +1135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Append image to sequence
-  app.post("/api/entries/:entryId/sequence-images", parseIntParam('entryId'), handleAsyncErrors(async (req, res) => {
+  app.post("/api/entries/:entryId/sequence-images", requireAuth, parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
     const entryId = (req as any).parsedParams.entryId;
     const { imageUrl } = req.body;
 
@@ -1088,17 +1143,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(400).json({ message: 'Image URL is required' });
     }
 
+    if (!(await userMayEditEntry(entryId, req.user))) {
+      return res.status(403).json({ message: 'Not your entry' });
+    }
+
     const updatedEntry = await (storage as any).appendSequenceImage(entryId, imageUrl);
     res.json({ success: true, entry: updatedEntry });
   }));
 
   // Append images from Twitter/X URLs to existing sequence
-  app.post("/api/entries/:entryId/sequence-images/twitter", parseIntParam('entryId'), handleAsyncErrors(async (req, res) => {
+  app.post("/api/entries/:entryId/sequence-images/twitter", requireAuth, parseIntParam('entryId'), handleAsyncErrors(async (req: any, res) => {
     const entryId = (req as any).parsedParams.entryId;
     const { tweetUrls } = req.body;
 
     if (!tweetUrls || !Array.isArray(tweetUrls) || tweetUrls.length === 0) {
       return res.status(400).json({ message: 'At least one tweet URL is required' });
+    }
+
+    if (!(await userMayEditEntry(entryId, req.user))) {
+      return res.status(403).json({ message: 'Not your entry' });
     }
 
     // Validate entry exists and is a sequence
@@ -1159,7 +1222,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }));
 
   // Artist links routes
-  app.get('/api/artists/:artistName/links', async (req, res) => {
+  app.get('/api/artists/:artistName/links', requireAuth, async (req, res) => {
     try {
       const artistName = decodeURIComponent(req.params.artistName);
       const links = await storage.getArtistLinks(artistName);
@@ -1170,7 +1233,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/artists/:artistName/links', async (req, res) => {
+  app.post('/api/artists/:artistName/links', requireAuth, async (req, res) => {
     try {
       const artistName = decodeURIComponent(req.params.artistName);
       const { platform, url } = req.body;
@@ -1188,7 +1251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/artist-links/:id', async (req, res) => {
+  app.delete('/api/artist-links/:id', requireAuth, async (req, res) => {
     try {
       const linkId = parseInt(req.params.id);
       await storage.deleteArtistLink(linkId);
@@ -1237,10 +1300,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Fetch all emojis in a single query
+      // Fetch all emojis in a single query. The lowercased tags are bound as a
+      // single array parameter — no string interpolation into SQL.
+      const lowered = tags.map(t => t.toLowerCase());
       const result = await db.execute(sql`
         SELECT tag_name, emoji FROM tag_emojis
-        WHERE LOWER(tag_name) = ANY(${sql.raw(`ARRAY[${tags.map(t => `LOWER('${t.replace(/'/g, "''")}')`).join(',')}]`)})
+        WHERE LOWER(tag_name) = ANY(${lowered})
       `);
 
       const emojiMap: Record<string, string> = {};
@@ -1299,7 +1364,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   }));
 
-  app.post("/api/tag-emojis", handleZodValidation(insertTagEmojiSchema), handleAsyncErrors(async (req, res) => {
+  app.post("/api/tag-emojis", requireAdmin, handleZodValidation(insertTagEmojiSchema), handleAsyncErrors(async (req, res) => {
     const { tagName, emoji } = req.body;
 
     // Check if emoji already exists for this tag
@@ -1621,7 +1686,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const items = [...ledgerItems, ...openClawItems];
     items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    res.json(items);
+    // Best-effort: badge items that have been posted to X by social.mariesvault.com.
+    // If the lookup fails (service down, no secret), gallery still renders without badges.
+    let postedMap: Record<string, string> = {};
+    try {
+      const r = await fetch("http://localhost:3006/api/vault/posted-ids", {
+        headers: { "x-service-secret": process.env.SERVICE_SECRET || "" },
+        signal: AbortSignal.timeout(2000),
+      });
+      if (r.ok) postedMap = await r.json();
+    } catch { /* badge is optional */ }
+
+    const annotated = items.map(it => ({
+      ...it,
+      postedToX: postedMap[String(it.id)] ? { tweetId: postedMap[String(it.id)] } : null,
+    }));
+
+    res.json(annotated);
   }));
 
   // Stream a ledger-tracked image by id after verifying ownership.
@@ -1684,7 +1765,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Cross-app source of truth: every Choice/Change/Studio artifact gets a row.
   // Writes are service-secret only (backend-to-backend). Reads are session-auth.
 
-  const VALID_APPS = new Set(["choice", "change", "studio", "openclaw"]);
+  const VALID_APPS = new Set(["choice", "change", "studio", "openclaw", "hermes"]);
   const VALID_KINDS = new Set(["image", "session-json", "video", "audio"]);
 
   app.post("/api/ledger/record", handleAsyncErrors(async (req: Request, res: Response) => {

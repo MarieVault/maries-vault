@@ -83,9 +83,21 @@ export async function handleRegister(req: Request, res: Response) {
   if (password.length < 8)
     return res.status(400).json({ error: "password must be at least 8 characters" });
 
+  // Sanitize: strip HTML tags from all string inputs
+  const sanitizedUsername = String(username).replace(/<[^>]*>/g, '');
+  const sanitizedEmail = String(email).replace(/<[^>]*>/g, '');
+
+  // Validate username: alphanumeric, underscore, hyphen, 1-30 chars
+  if (!/^[a-zA-Z0-9_-]{1,30}$/.test(sanitizedUsername))
+    return res.status(400).json({ error: "username must be 1-30 alphanumeric, underscore, or hyphen characters" });
+
+  // Validate email format
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedEmail))
+    return res.status(400).json({ error: "invalid email format" });
+
   const existing = await pool.query(
     "SELECT id FROM users WHERE username = $1 OR email = $2",
-    [username, email]
+    [sanitizedUsername, sanitizedEmail]
   );
   if (existing.rows.length)
     return res.status(409).json({ error: "username or email already taken" });
@@ -97,8 +109,8 @@ export async function handleRegister(req: Request, res: Response) {
      VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8)
      RETURNING id`,
     [
-      username,
-      email,
+      sanitizedUsername,
+      sanitizedEmail,
       password_hash,
       "user",
       clientIp(req),
@@ -114,8 +126,8 @@ export async function handleRegister(req: Request, res: Response) {
   res.cookie(COOKIE_NAME, sessionId, COOKIE_OPTS);
   res.status(201).json({
     id: userId,
-    username,
-    email,
+    username: sanitizedUsername,
+    email: sanitizedEmail,
     role: "user",
     status: "pending",
   });
@@ -221,6 +233,32 @@ export async function requireAuthOrService(req: Request & { user?: any }, res: R
     return next();
   }
   return requireAuth(req, res, next);
+}
+
+// Allows access if the user is authenticated OR if the requested entry
+// (identified by :id route param) has visibility='public'.
+export async function requireAuthOrPublicEntry(req: Request & { user?: any }, res: Response, next: NextFunction) {
+  const sessionId = req.cookies?.[COOKIE_NAME];
+  const user = await validateSession(sessionId);
+  if (user) {
+    req.user = user;
+    return next();
+  }
+  // Not authenticated — check if the requested entry is public
+  const entryId = parseInt(req.params.id, 10);
+  if (isNaN(entryId)) {
+    return res.status(401).json({ error: "authentication required" });
+  }
+  const result = await pool.query(
+    "SELECT visibility FROM entries WHERE id = $1",
+    [entryId]
+  );
+  const entry = result.rows[0];
+  if (!entry || (entry.visibility ?? 'public') !== 'public') {
+    return res.status(401).json({ error: "authentication required" });
+  }
+  // Public entry — allow without auth
+  next();
 }
 
 // Export validateSession for inline use

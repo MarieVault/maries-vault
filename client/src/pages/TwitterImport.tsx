@@ -53,10 +53,11 @@ export default function TwitterImport() {
     setIsImportingTwitter(true);
 
     try {
-      const response = await apiRequest("POST", "/api/extract-twitter-multi", {
+      const res = await apiRequest("POST", "/api/extract-twitter-multi", {
         tweetUrls: validUrls,
         visibility,
       });
+      const response = await res.json();
 
       if (response.success && response.entry) {
         setTwitterUrls([""]);

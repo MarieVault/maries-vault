@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import EntryCard from "../components/EntryCard";
 import Logo from "../components/Logo";
 import { Button } from "@/components/ui/button";
-import { Users, Lock, Grid3X3, Square, Plus, Tag, Trophy, Images, Bookmark, LogIn, Globe, Eye, EyeOff, Crown, HardDrive, BookOpen } from "lucide-react";
+import { Users, Lock, Grid3X3, Square, Plus, Tag, Trophy, Images, Bookmark, LogIn, Globe, Eye, EyeOff, Crown, HardDrive, BookOpen, Clock } from "lucide-react";
 import { useBlur } from "../context/BlurContext";
 import HintBanner from "../components/HintBanner";
 import type { Entry } from "@shared/schema";
@@ -340,6 +340,21 @@ export default function Home() {
               </Link>
             </div>
 
+            <div className="p-4 bg-white rounded-xl shadow-lg">
+              <h3 className="font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+                <Clock className="text-green-600" size={16} />
+                <span>Recently Added</span>
+              </h3>
+              <p className="text-gray-600 text-sm mb-3">See the latest entries added to the gallery</p>
+              <Link href="/recent">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                >
+                  Recently Added
+                </Button>
+              </Link>
+            </div>
 
 
           </div>

@@ -21,6 +21,7 @@ import InstallPWA from "@/pages/InstallPWA";
 import TwitterImport from "@/pages/TwitterImport";
 import ImageViewer from "@/pages/ImageViewer";
 import Gallery from "@/pages/Gallery";
+import RecentEntries from "@/pages/RecentEntries";
 import Login from "@/pages/Login";
 import MyCollection from "@/pages/MyCollection";
 import AdminDashboard from "@/pages/AdminDashboard";
@@ -30,6 +31,7 @@ import Stories from "@/pages/Stories";
 import DMCAPage from "@/pages/DMCA";
 import TermsPage from "@/pages/Terms";
 import MangaList from "@/pages/MangaList";
+import EntryPage from "@/pages/EntryPage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -49,6 +51,7 @@ function Router() {
       <Route path="/share-handler" component={ShareHandler} />
       <Route path="/install-pwa" component={InstallPWA} />
       <Route path="/gallery" component={Gallery} />
+      <Route path="/recent" component={RecentEntries} />
       <Route path="/login" component={Login} />
       <Route path="/collection" component={MyCollection} />
       <Route path="/admin" component={AdminDashboard} />
@@ -58,6 +61,7 @@ function Router() {
       <Route path="/dmca" component={DMCAPage} />
       <Route path="/terms" component={TermsPage} />
       <Route path="/mangalist" component={MangaList} />
+      <Route path="/entry/:id" component={EntryPage} />
       <Route component={NotFound} />
     </Switch>
   );

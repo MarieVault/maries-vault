@@ -158,6 +158,19 @@ export default function ArtistPage() {
 
   const displayArtistName = artistName ? decodeURIComponent(artistName) : "";
 
+  // Extract native_name from artist links (not a real link, just metadata)
+  const nativeName = useMemo(() => {
+    if (!artistLinks) return null;
+    const native = artistLinks.find(l => l.platform === 'native_name');
+    return native ? native.url : null;
+  }, [artistLinks]);
+
+  // Filter out native_name from display links
+  const displayLinks = useMemo(() => {
+    if (!artistLinks) return [];
+    return artistLinks.filter(l => l.platform !== 'native_name');
+  }, [artistLinks]);
+
   // Helper function to get platform favicon URL
   const getPlatformFavicon = (platform: string, url: string) => {
     const platformLower = platform.toLowerCase();
@@ -293,6 +306,9 @@ export default function ArtistPage() {
             <Palette className="text-indigo-600" size={20} />
             <h2 className="text-lg font-semibold text-gray-900 truncate">{displayArtistName}</h2>
           </div>
+          {nativeName && (
+            <p className="text-sm text-gray-500 mb-3 -mt-1 ml-7">{nativeName}</p>
+          )}
           <div className="grid grid-cols-3 gap-4 text-sm mb-4">
             <div className="text-center">
               <div className="font-semibold text-gray-900">{artistEntries.length}</div>
@@ -310,9 +326,9 @@ export default function ArtistPage() {
 
           {/* Artist Links Section */}
           <div className="space-y-2">
-            {artistLinks && artistLinks.length > 0 && (
+            {displayLinks && displayLinks.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {artistLinks.map((link) => (
+                {displayLinks.map((link) => (
                   <div key={link.id} className="flex items-center">
                     <a
                       href={link.url}

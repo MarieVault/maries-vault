@@ -177,9 +177,10 @@ export default function SequenceGallery() {
     setIsImportingTwitter(true);
 
     try {
-      const response = await apiRequest("POST", `/api/entries/${entry.id}/sequence-images/twitter`, {
+      const res = await apiRequest("POST", `/api/entries/${entry.id}/sequence-images/twitter`, {
         tweetUrls: validUrls,
       });
+      const response = await res.json();
 
       if (response.success) {
         setTwitterUrls([""]);

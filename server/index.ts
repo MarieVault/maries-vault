@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import path from "path";
+import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
@@ -8,6 +9,39 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 app.use(cookieParser());
+
+// ── Rate limiting ────────────────────────────────────────────────────────────
+// Login: 5 attempts per minute per IP
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts. Please try again in a minute." },
+});
+
+// Register: 3 attempts per hour per IP (admin-only endpoint)
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many registration attempts. Please try again in an hour." },
+});
+
+// General API: 100 requests per minute per IP
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please slow down." },
+});
+
+// Apply specific limiters first so they take priority over the general one
+app.use("/api/auth/login", loginLimiter);
+app.use("/api/auth/register", registerLimiter);
+app.use("/api", apiLimiter);
 
 // Serve uploaded images from /uploads directory
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
@@ -50,6 +84,15 @@ app.use((req, res, next) => {
     }
   });
 
+  next();
+});
+
+// Content-Security-Policy header
+app.use((_req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  );
   next();
 });
 

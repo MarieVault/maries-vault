@@ -545,6 +545,7 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
   }, [entry.id]);
 
   const displayTitle = entry.title || "Untitled";
+  const nativeTitle = (entry as any).nativeTitle || "";
   const displayImage = customImage || entry.imageUrl || '/placeholder.jpg';
   const displayArtist = customArtist || entry.artist;
 
@@ -661,6 +662,9 @@ export default function EntryCard({ entry, showOrigin = false }: EntryCardProps)
                     <h2 className="text-lg font-semibold text-slate-800 leading-tight">
                       {displayTitle}
                     </h2>
+                  )}
+                  {nativeTitle && (
+                    <p className="text-sm text-gray-400 mt-0.5">{nativeTitle}</p>
                   )}
                   <div className="flex items-center gap-1">
                     {!isOwner && <SaveButton entryId={entry.id} showLabel />}

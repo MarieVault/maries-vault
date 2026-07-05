@@ -17,6 +17,7 @@ export const circles = pgTable("circles", {
 export const entries = pgTable("entries", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
+  nativeTitle: text("native_title"),
   imageUrl: text("image_url").notNull(),
   externalLink: text("external_link"),
   artist: text("artist").notNull(),
@@ -209,7 +210,8 @@ export interface Entry {
   type: 'comic' | 'image' | 'sequence' | 'story' | 'video';
   sequenceImages?: string[];
   content?: string;
-  rating?: number | null;
+  rating?: number | null; // Global/curation rating (custom_entries.rating)
+  userRating?: number | null; // Current viewer's personal rating (user_ratings.rating)
   archived?: boolean;
   userId?: number | null;
   visibility?: 'public' | 'private';

@@ -165,10 +165,11 @@ export default function CreateEntry() {
     setIsImportingTwitter(true);
 
     try {
-      const response = await apiRequest("POST", "/api/extract-twitter-multi", {
+      const res = await apiRequest("POST", "/api/extract-twitter-multi", {
         tweetUrls: validUrls,
         visibility: formData.visibility,
       });
+      const response = await res.json();
 
       if (response.success && response.entry) {
         // Clear Twitter URL inputs

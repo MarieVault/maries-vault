@@ -14,6 +14,15 @@ interface GalleryImage {
   createdAt: string;
   app: string;
   hearted: boolean;
+  postedToX: { tweetId: string } | null;
+}
+
+function XLogo({ size = 10 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" width={size} height={size} aria-hidden="true">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
 }
 
 export default function Gallery() {
@@ -104,7 +113,7 @@ export default function Gallery() {
 
     setSaving(true);
     try {
-      const entry = await apiRequest("POST", "/api/entries", {
+      const res = await apiRequest("POST", "/api/entries", {
         title: saveTitle,
         imageUrl: urls[0],
         sequenceImages: isSequence ? urls : [],
@@ -113,6 +122,7 @@ export default function Gallery() {
         tags,
         userId: 7,
       });
+      const entry = await res.json();
 
       queryClient.invalidateQueries({ queryKey: ["/api/entries"] });
       const id = entry.id;
@@ -218,6 +228,20 @@ export default function Gallery() {
                         fill={isFav ? "currentColor" : "none"}
                       />
                     </button>
+
+                    {/* Posted-to-X badge (links to tweet) */}
+                    {img.postedToX && (
+                      <a
+                        href={`https://x.com/i/status/${img.postedToX.tweetId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute bottom-1 right-1 p-1 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors"
+                        title="Posted to X — view tweet"
+                      >
+                        <XLogo />
+                      </a>
+                    )}
                   </div>
                 );
               })}

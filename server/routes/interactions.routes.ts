@@ -52,6 +52,20 @@ export function registerInteractionsRoutes(app: Express): void {
     res.json(saved.rows);
   }));
 
+  // Lightweight: just the current user's saved entry IDs. Lets SaveButton power
+  // a whole feed with one shared query instead of one check request per card.
+  // Returns [] (not 401) when unauthenticated so the shared query is harmless.
+  app.get("/api/collections/ids", handleAsyncErrors(async (req: any, res) => {
+    const token = req.cookies?.auth_session;
+    if (!token) return res.json([]);
+    const user = await validateSession(token);
+    if (!user) return res.json([]);
+    const rows = await db.select({ entryId: userCollections.entryId })
+      .from(userCollections)
+      .where(eq(userCollections.userId, user.id));
+    res.json(rows.map(r => r.entryId));
+  }));
+
   // ── User Ratings (personal per-user) ─────────────────────────────────────
 
   // Set or update rating

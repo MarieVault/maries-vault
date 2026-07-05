@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Bookmark, BookmarkCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "../context/AuthContext";
+import { queryClient } from "../lib/queryClient";
 
 interface SaveButtonProps {
   entryId: number;
@@ -15,18 +17,21 @@ export default function SaveButton({ entryId, size = "sm", showLabel = false }: 
   const { isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [checked, setChecked] = useState(false);
 
-  useEffect(() => {
-    if (!checked) {
-      fetch(`/api/collections/check/${entryId}`, { credentials: "include" })
-        .then(r => r.json())
-        .then(d => { setSaved(d.saved); setChecked(true); })
-        .catch(() => setChecked(true));
-    }
-  }, [entryId, checked]);
+  // One shared query for the whole feed — React Query dedupes every SaveButton
+  // instance into a single /api/collections/ids request instead of one
+  // /api/collections/check per card.
+  const { data: savedIds } = useQuery<number[]>({
+    queryKey: ["/api/collections/ids"],
+    enabled: isAuthenticated,
+    queryFn: async () => {
+      const r = await fetch("/api/collections/ids", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+  const saved = (savedIds ?? []).includes(entryId);
 
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -38,18 +43,22 @@ export default function SaveButton({ entryId, size = "sm", showLabel = false }: 
       return;
     }
 
+    const wasSaved = saved;
     setLoading(true);
     try {
-      const method = saved ? "DELETE" : "POST";
       const res = await fetch(`/api/collections/${entryId}`, {
-        method,
+        method: wasSaved ? "DELETE" : "POST",
         credentials: "include",
       });
       const data = await res.json();
-      setSaved(data.saved);
+      // Update the shared cache so every button for this entry re-derives.
+      queryClient.setQueryData<number[]>(["/api/collections/ids"], (old = []) =>
+        data.saved ? Array.from(new Set([...old, entryId])) : old.filter((id) => id !== entryId)
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/collections"] });
       toast({
-        title: saved ? "Removed from collection" : "Saved to your vault",
-        description: saved ? "" : "Find it in My Collection.",
+        title: wasSaved ? "Removed from collection" : "Saved to your vault",
+        description: wasSaved ? "" : "Find it in My Collection.",
       });
     } catch {
       toast({ title: "Something went wrong", variant: "destructive" });

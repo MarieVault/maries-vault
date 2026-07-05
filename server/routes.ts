@@ -8,7 +8,7 @@ import path from "path";
 import fs from "fs";
 import archiver from "archiver";
 import { db } from "./db";
-import { eq, sql, and, desc } from "drizzle-orm";
+import { eq, sql, and, desc, inArray } from "drizzle-orm";
 import { handleLogin, handleLogout, handleRegister, handleMe, requireAuth, requireAdmin, optionalAuth, requireAuthOrService, requireAuthOrPublicEntry } from "./auth";
 import { handlePublish, handleUnpublish, listMyPublished, listPublicStories, getStoryBySlug, incrementViews, PUBLISHED_ROOT, appHostname, storyUrlFor } from "./stories.js";
 
@@ -235,7 +235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rows = await db.select().from(userRatings)
         .where(and(
           eq(userRatings.userId, user.id),
-          sql`${userRatings.entryId} = ANY(${entryIds})`
+          inArray(userRatings.entryId, entryIds)
         ));
       const out: Record<number, number> = {};
       for (const r of rows) out[r.entryId] = r.rating;
